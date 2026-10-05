@@ -1,0 +1,26 @@
+# Keeps plays/index.json in sync when a team file (.enc.json) is uploaded or deleted on GitHub.
+name: Update playbook index
+on:
+  push:
+    branches: [main]
+    paths: ['plays/**']
+permissions:
+  contents: write
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node tools/playbook.mjs index
+      - name: Commit index if it changed
+        run: |
+          if ! git diff --quiet plays/index.json; then
+            git config user.name "playbook-bot"
+            git config user.email "playbook-bot@users.noreply.github.com"
+            git add plays/index.json
+            git commit -m "Update playbook index"
+            git push
+          fi

@@ -1,0 +1,450 @@
+// Play Designer: place pieces, then build the play step by step by dragging.
+import { createBoard } from './render.js';
+import { el, fieldBounds, nearestGoalY } from './field.js';
+import { normalizePlay, ballAfter, STICK, ORDER_LABELS, DEFAULT_DUR } from './engine.js';
+import { encryptJSON, decryptJSON } from './crypto.js';
+import { h, svgEl, toast, CATEGORIES, PREVIEW, download, copyText, uid } from './ui.js';
+import { printBlank } from './print.js';
+
+const OUR_POSITIONS = ['A1', 'A2', 'A3', 'M1', 'M2', 'M3', 'D1', 'D2', 'D3', 'G', 'LSM', 'FO'];
+
+// Formations. Coordinates are yards; our offense attacks the top goal at y = 15.
+const FORMATIONS = {
+  '3-3': { label: '3-3 (half field)', pieces: { A1: [15, 16], A2: [30, 7.5], A3: [45, 16], M1: [17, 32], M2: [30, 35], M3: [43, 32] } },
+  '2-3-1': { label: '2-3-1 (half field)', pieces: { M1: [22, 34], M2: [38, 34], A1: [12, 18], M3: [30, 22], A3: [48, 18], A2: [30, 7.5] } },
+  '1-4-1': { label: '1-4-1 (half field)', pieces: { M2: [30, 35], A1: [12, 19], M1: [23, 25], M3: [37, 25], A3: [48, 19], A2: [30, 7.5] } },
+  full10: {
+    label: 'Full team of 10 (full field)', field: 'full',
+    pieces: { G: [30, 94], D1: [15, 86], D2: [30, 82], D3: [45, 86], M1: [15, 55], M2: [30, 58], M3: [45, 55], A1: [15, 25], A2: [30, 20], A3: [45, 25] },
+  },
+  man: { label: 'Add opponents: man-to-man defense' },
+};
+
+function newPlay() {
+  const pieces = Object.entries(FORMATIONS['3-3'].pieces).map(([id, [x, y]]) => ({ id, type: 'O', label: id, x, y }));
+  return normalizePlay({
+    id: uid(), title: 'Untitled play', category: 'Offense', field: 'half', description: '',
+    pieces, ball: { holder: 'M2' }, steps: [blankStep()],
+  });
+}
+
+function blankStep() {
+  return { note: '', dur: DEFAULT_DUR, order: 'pass-first', moves: [], ball: [] };
+}
+
+export function renderDesigner(main, ctx, id) {
+  let play;
+  if (id && ctx.drafts[id]) play = ctx.drafts[id];
+  else if (id) {
+    const pub = ctx.published.find((p) => p.id === id);
+    play = pub ? structuredClone(pub) : newPlay();
+  } else play = newPlay();
+
+  const D = { k: play.steps.length ? 0 : -1, tool: 'move', add: null, kind: 'run', sel: null, drag: null };
+  let board = null;
+  let saveTimer = 0;
+
+  const svg = svgEl('design-svg');
+  const panel = h('div', { class: 'd-panel' });
+  const hint = h('p', { class: 'd-hint', role: 'status' });
+  const savedNote = h('span', { class: 'saved' }, '');
+  const fallback = h('textarea', { class: 'copy-fallback', hidden: true, readonly: true, 'aria-label': 'Play data to copy' });
+
+  // ----- persistence -----
+  function save() {
+    play.updated = Date.now();
+    ctx.drafts[play.id] = play;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { ctx.saveDrafts(); savedNote.textContent = 'Saved on this device'; }, 250);
+    savedNote.textContent = 'Saving…';
+  }
+  function changed() { save(); redraw(); renderPanel(); }
+
+  // ----- geometry -----
+  function toField(ev) {
+    const p = svg.createSVGPoint();
+    p.x = ev.clientX; p.y = ev.clientY;
+    const q = p.matrixTransform(svg.getScreenCTM().inverse());
+    const b = fieldBounds(play.field);
+    return { x: Math.min(b.x1, Math.max(b.x0, q.x)), y: Math.min(b.y1, Math.max(b.y0, q.y)) };
+  }
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const step = () => play.steps[D.k];
+  const piece = (pid) => play.pieces.find((p) => p.id === pid);
+
+  // ----- drawing -----
+  function redraw() {
+    board = createBoard(svg, play, {});
+    board.show(D.k, 0);
+    const ov = board.layers.overlay;
+    if (D.k >= 0) {
+      const s0 = board.states[D.k];
+      for (const m of step().moves) {
+        const a = s0.pos[m.id];
+        if (!a) continue;
+        const mid = m.via ? { x: m.via[0], y: m.via[1] } : { x: (a.x + m.to[0]) / 2, y: (a.y + m.to[1]) / 2 };
+        el('circle', { cx: m.to[0], cy: m.to[1], r: 1.1, class: 'h-end', 'data-handle': 'end:' + m.id }, ov);
+        el('rect', { x: mid.x - 0.6, y: mid.y - 0.6, width: 1.2, height: 1.2, transform: `rotate(45 ${mid.x} ${mid.y})`, class: 'h-via', 'data-handle': 'via:' + m.id }, ov);
+      }
+    }
+    if (D.k < 0 && D.sel && board.nodes[D.sel]) board.nodes[D.sel].classList.add('is-selected');
+    svg.classList.toggle('tool-active', D.tool !== 'move');
+    setHint();
+  }
+
+  function setHint() {
+    const t = {
+      move: D.k < 0 ? 'Drag pieces to their starting spots. Tap a piece to rename or delete it.'
+        : 'Drag a player to where they go in this step. Drag the round handle to adjust; drag the diamond to bend the path.',
+      add: `Tap the field to place ${D.add?.label || 'the piece'}.`,
+      ball: 'Tap a player or the coach to give them the ball, or tap the field to drop a loose ball.',
+      pass: 'Tap the player who receives the pass.',
+      gb: 'Tap the spot where the ball ends up on the ground.',
+      scoop: 'Tap the player who scoops the ground ball.',
+    }[D.tool];
+    hint.textContent = t;
+  }
+
+  // ----- edits -----
+  function setTool(t, add) { D.tool = t; D.add = add || null; renderPanel(); setHint(); svg.classList.toggle('tool-active', t !== 'move'); }
+
+  function addPiece(at) {
+    const a = D.add;
+    let label = a.label;
+    if (a.type === 'X' && !label) { let i = 1; while (piece('X' + i)) i++; label = 'X' + i; }
+    let pid = a.type === 'cone' ? 'cone' : a.type === 'coach' ? 'C' : label;
+    if (piece(pid) || a.type === 'cone') { let i = 1; while (piece(pid + i)) i++; pid = pid + i; }
+    play.pieces.push({ id: pid, type: a.type, label: a.type === 'cone' ? '' : a.type === 'coach' ? 'C' : label, x: r1(at.x), y: r1(at.y) });
+    D.sel = pid;
+    setTool('move');
+    changed();
+  }
+
+  function removePiece(pid) {
+    play.pieces = play.pieces.filter((p) => p.id !== pid);
+    if (play.ball.holder === pid) play.ball = {};
+    for (const s of play.steps) {
+      s.moves = s.moves.filter((m) => m.id !== pid);
+      s.ball = s.ball.filter((e) => e.from !== pid && e.to !== pid && e.by !== pid);
+    }
+    D.sel = null;
+    changed();
+  }
+
+  function applyFormation(key) {
+    const f = FORMATIONS[key];
+    if (key === 'man') {
+      const goal = { x: 30, y: 15 };
+      const ours = play.pieces.filter((p) => p.type === 'O' && p.label !== 'G');
+      ours.forEach((o, i) => {
+        const dx = goal.x - o.x, dy = goal.y - o.y, L = Math.hypot(dx, dy) || 1;
+        const pid = 'X' + (i + 1);
+        const pos = { x: r1(o.x + (dx / L) * 2.6), y: r1(o.y + (dy / L) * 2.6) };
+        const ex = piece(pid);
+        if (ex) Object.assign(ex, pos); else play.pieces.push({ id: pid, type: 'X', label: pid, ...pos });
+      });
+      if (!piece('XG')) play.pieces.push({ id: 'XG', type: 'X', label: 'G', x: 30, y: 16.8 });
+    } else {
+      if (f.field && play.field !== f.field) play.field = f.field;
+      for (const [pid, [x, y]] of Object.entries(f.pieces)) {
+        const ex = piece(pid);
+        if (ex) Object.assign(ex, { x, y }); else play.pieces.push({ id: pid, type: 'O', label: pid, x, y });
+      }
+    }
+    changed();
+  }
+
+  function setMove(pid, to) {
+    const s = step();
+    const a = board.states[D.k].pos[pid];
+    let m = s.moves.find((mm) => mm.id === pid);
+    if (Math.hypot(to.x - a.x, to.y - a.y) < 0.8) {
+      s.moves = s.moves.filter((mm) => mm.id !== pid);
+      return;
+    }
+    if (!m) { m = { id: pid, kind: D.kind, to: [0, 0] }; s.moves.push(m); }
+    m.to = [r1(to.x), r1(to.y)];
+  }
+
+  function ballNow() { return ballAfter(step(), board.states[D.k]); }
+  function hasPickup() { return step().ball.some((e) => e.type === 'pickup'); }
+
+  function addPass(to) {
+    if (hasPickup()) return toast('Put the next pass in a new step, after the scoop.');
+    const b = ballNow();
+    if (!b.holder) return toast('Nobody has the ball at this point. Use Scoop first, or give someone the ball in Setup.');
+    if (b.holder === to) return toast(`${piece(to)?.label} already has the ball.`);
+    step().ball.push({ type: 'pass', from: b.holder, to });
+    changed();
+  }
+
+  function addShot() {
+    if (hasPickup()) return toast('Put the shot in a new step, after the scoop.');
+    const b = ballNow();
+    if (!b.holder) return toast('Nobody has the ball at this point, so there is no one to shoot.');
+    const s0 = board.states[D.k];
+    const m = step().moves.find((mm) => mm.id === b.holder);
+    const y = m ? m.to[1] : s0.pos[b.holder].y;
+    const gy = nearestGoalY(play.field, y);
+    const x = (m ? m.to[0] : s0.pos[b.holder].x) < 30 ? 30.7 : 29.3; // aim for the far pipe
+    step().ball.push({ type: 'shot', from: b.holder, at: [x, gy] });
+    changed();
+  }
+
+  function addRoll(at) {
+    if (hasPickup()) return toast('Start a new step for the next ground ball.');
+    const b = ballNow();
+    if (!b.holder && !b.ball) return toast('There is no ball yet. In Setup, give the ball to a player or the coach.');
+    const e = { type: 'roll', at: [r1(at.x), r1(at.y)] };
+    if (b.holder) e.from = b.holder;
+    step().ball.push(e);
+    setTool('move');
+    changed();
+  }
+
+  function addScoop(by) {
+    const b = ballNow();
+    if (b.holder || !b.ball) return toast('There is no loose ball to scoop. Add a ground ball first.');
+    const s = step();
+    if (!s.moves.some((m) => m.id === by)) {
+      s.moves.push({ id: by, kind: 'run', to: [r1(b.ball.x - STICK.x), r1(b.ball.y - STICK.y)] });
+    }
+    s.ball.push({ type: 'pickup', by });
+    setTool('move');
+    changed();
+  }
+
+  // ----- pointer handling -----
+  svg.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0) return;
+    const at = toField(ev);
+    const handle = ev.target.closest('[data-handle]');
+    const pc = ev.target.closest('.piece');
+    const pid = pc?.getAttribute('data-id');
+
+    if (handle && D.tool === 'move') {
+      const [kind, hid] = handle.getAttribute('data-handle').split(':');
+      D.drag = { kind, id: hid, start: at, moved: false };
+    } else if (D.tool === 'add') {
+      return addPiece(at);
+    } else if (D.tool === 'ball') {
+      play.ball = pid ? { holder: pid } : { at: [r1(at.x), r1(at.y)] };
+      setTool('move');
+      return changed();
+    } else if (D.tool === 'pass') {
+      if (pid) addPass(pid);
+      return;
+    } else if (D.tool === 'gb') {
+      return addRoll(at);
+    } else if (D.tool === 'scoop') {
+      if (pid) addScoop(pid);
+      return;
+    } else if (pid) {
+      D.drag = { kind: D.k < 0 ? 'setup' : 'piece', id: pid, start: at, moved: false };
+    } else {
+      if (D.sel) { D.sel = null; redraw(); renderPanel(); }
+      return;
+    }
+    svg.setPointerCapture(ev.pointerId);
+    ev.preventDefault();
+  });
+
+  svg.addEventListener('pointermove', (ev) => {
+    const d = D.drag;
+    if (!d) return;
+    const at = toField(ev);
+    if (!d.moved && Math.hypot(at.x - d.start.x, at.y - d.start.y) < 0.5) return;
+    d.moved = true;
+    if (d.kind === 'setup') {
+      const p = piece(d.id);
+      p.x = r1(at.x); p.y = r1(at.y);
+    } else if (d.kind === 'piece' || d.kind === 'end') {
+      setMove(d.id, at);
+    } else if (d.kind === 'via') {
+      const m = step().moves.find((mm) => mm.id === d.id);
+      if (m) m.via = [r1(at.x), r1(at.y)];
+    }
+    redraw();
+  });
+
+  const endDrag = () => {
+    const d = D.drag;
+    D.drag = null;
+    if (!d) return;
+    if (!d.moved) {
+      if (d.kind === 'setup' || d.kind === 'piece') { D.sel = d.id; redraw(); renderPanel(); }
+      return;
+    }
+    changed();
+  };
+  svg.addEventListener('pointerup', endDrag);
+  svg.addEventListener('pointercancel', endDrag);
+
+  function onKey(e) {
+    if (e.target.closest('input,select,textarea')) return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && D.k < 0 && D.sel) { e.preventDefault(); removePiece(D.sel); }
+    if (e.key === 'Escape') { setTool('move'); }
+  }
+  document.addEventListener('keydown', onKey);
+
+  // ----- panel -----
+  const seg = (items, cur, onPick) => h('div', { class: 'seg', role: 'group' },
+    items.map(([v, label]) => h('button', { class: v === cur ? 'on' : '', 'aria-pressed': String(v === cur), onclick: () => onPick(v) }, label)));
+
+  function describe(e) {
+    const L = (x) => piece(x)?.label || x;
+    if (e.type === 'pass') return `Pass ${L(e.from)} → ${L(e.to)}`;
+    if (e.type === 'shot') return `Shot by ${L(e.from)}`;
+    if (e.type === 'roll') return e.from ? `${L(e.from)} rolls a ground ball` : 'Ball rolls loose';
+    return `${L(e.by)} scoops it`;
+  }
+
+  function stepTabs() {
+    return h('div', { class: 'step-tabs', role: 'tablist', 'aria-label': 'Steps' },
+      h('button', { role: 'tab', class: D.k < 0 ? 'on' : '', 'aria-selected': String(D.k < 0), onclick() { D.k = -1; setTool('move'); redraw(); } }, 'Setup'),
+      play.steps.map((_, i) => h('button', { role: 'tab', class: D.k === i ? 'on' : '', 'aria-selected': String(D.k === i), onclick() { D.k = i; D.sel = null; setTool('move'); redraw(); } }, String(i + 1))),
+      h('button', { class: 'add-step', onclick() { play.steps.splice(D.k + 1, 0, blankStep()); D.k = D.k + 1; setTool('move'); changed(); } }, '+ Step'));
+  }
+
+  function setupPanel() {
+    const sel = D.sel && piece(D.sel);
+    const formation = h('select', { id: 'formation', 'aria-label': 'Formation' },
+      Object.entries(FORMATIONS).map(([k2, f]) => h('option', { value: k2 }, f.label)));
+    const holder = play.ball.holder ? piece(play.ball.holder)?.label : null;
+    return [
+      h('h3', {}, 'Setup'),
+      h('div', { class: 'row' }, formation, h('button', { class: 'btn btn-quiet', onclick: () => applyFormation(formation.value) }, 'Apply')),
+      h('p', { class: 'label' }, 'Hawks (black)'),
+      h('div', { class: 'pal' }, OUR_POSITIONS.map((p) => h('button', {
+        class: 'pal-btn pal-o' + (D.tool === 'add' && D.add?.label === p ? ' on' : ''), disabled: !!piece(p),
+        onclick: () => setTool('add', { type: 'O', label: p }),
+      }, p))),
+      h('p', { class: 'label' }, 'Opponents (red) and drill gear'),
+      h('div', { class: 'pal' },
+        h('button', { class: 'pal-btn pal-x' + (D.tool === 'add' && D.add?.type === 'X' ? ' on' : ''), onclick: () => setTool('add', { type: 'X', label: '' }) }, '+ Opponent'),
+        h('button', { class: 'pal-btn' + (D.tool === 'add' && D.add?.type === 'cone' ? ' on' : ''), onclick: () => setTool('add', { type: 'cone', label: 'cone' }) }, '+ Cone'),
+        h('button', { class: 'pal-btn' + (D.tool === 'add' && D.add?.type === 'coach' ? ' on' : ''), onclick: () => setTool('add', { type: 'coach', label: 'the coach' }) }, '+ Coach')),
+      h('p', { class: 'label' }, 'Ball'),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn btn-quiet' + (D.tool === 'ball' ? ' on' : ''), onclick: () => setTool(D.tool === 'ball' ? 'move' : 'ball') }, 'Place ball'),
+        h('span', { class: 'muted' }, holder ? `Starts with ${holder}` : play.ball.at ? 'Loose ball on the field' : 'No ball yet')),
+      sel ? h('div', { class: 'sel-box' },
+        h('p', { class: 'label' }, 'Selected piece'),
+        sel.type === 'cone' ? h('p', {}, 'Cone') : h('input', {
+          id: 'sel-label', value: sel.label, maxlength: 4, 'aria-label': 'Label',
+          oninput(e) { sel.label = e.target.value.toUpperCase(); save(); redraw(); },
+        }),
+        h('button', { class: 'btn btn-danger', onclick: () => removePiece(sel.id) }, 'Delete piece')) : null,
+    ];
+  }
+
+  function stepPanel() {
+    const s = step();
+    const moves = s.moves.map((m) => h('li', {},
+      h('span', {}, piece(m.id)?.label || m.id),
+      h('select', { 'aria-label': 'Movement type', onchange(e) { m.kind = e.target.value; changed(); } },
+        [['run', 'Run / cut'], ['dodge', 'Dodge'], ['pick', 'Pick']].map(([v, l]) => h('option', { value: v, selected: m.kind === v }, l))),
+      m.via ? h('button', { class: 'linkish', onclick() { delete m.via; changed(); } }, 'Straighten') : null,
+      h('button', { class: 'x', 'aria-label': 'Remove this move', onclick() { s.moves = s.moves.filter((x) => x !== m); changed(); } }, '✕')));
+    const events = s.ball.map((e) => h('li', {}, h('span', {}, describe(e)),
+      h('button', { class: 'x', 'aria-label': 'Remove', onclick() { s.ball = s.ball.filter((x) => x !== e); changed(); } }, '✕')));
+    const note = h('textarea', { id: 'note', rows: 4, placeholder: 'What should players read or say on this step?', oninput(e) { s.note = e.target.value; save(); } });
+    note.value = s.note;
+    return [
+      h('h3', {}, `Step ${D.k + 1} of ${play.steps.length}`),
+      h('p', { class: 'label' }, 'Next drag draws a'),
+      seg([['run', 'Run / cut'], ['dodge', 'Dodge'], ['pick', 'Pick']], D.kind, (v) => { D.kind = v; renderPanel(); }),
+      h('p', { class: 'label' }, 'Ball'),
+      h('div', { class: 'pal' },
+        h('button', { class: 'pal-btn' + (D.tool === 'pass' ? ' on' : ''), onclick: () => setTool(D.tool === 'pass' ? 'move' : 'pass') }, 'Pass'),
+        h('button', { class: 'pal-btn' + (D.tool === 'gb' ? ' on' : ''), onclick: () => setTool(D.tool === 'gb' ? 'move' : 'gb') }, 'Ground ball'),
+        h('button', { class: 'pal-btn' + (D.tool === 'scoop' ? ' on' : ''), onclick: () => setTool(D.tool === 'scoop' ? 'move' : 'scoop') }, 'Scoop'),
+        h('button', { class: 'pal-btn', onclick: addShot }, 'Shot')),
+      h('label', { class: 'label', for: 'note' }, 'Coaching note'),
+      note,
+      h('p', { class: 'label' }, 'In this step'),
+      moves.length || events.length ? h('ul', { class: 'actions' }, moves, events) : h('p', { class: 'muted' }, 'Nothing yet. Drag a player to start.'),
+      h('details', { class: 'timing' },
+        h('summary', {}, 'Timing'),
+        h('label', { class: 'label', for: 'order' }, 'Order'),
+        h('select', { id: 'order', onchange(e) { s.order = e.target.value; changed(); } },
+          Object.entries(ORDER_LABELS).map(([v, l]) => h('option', { value: v, selected: s.order === v }, l))),
+        h('label', { class: 'label', for: 'dur' }, `Length: ${s.dur.toFixed(1)} seconds`),
+        h('input', { id: 'dur', type: 'range', min: 1, max: 5, step: 0.1, value: s.dur, oninput(e) { s.dur = +e.target.value; e.target.previousSibling.textContent = `Length: ${s.dur.toFixed(1)} seconds`; save(); } })),
+      h('div', { class: 'row' },
+        h('button', { class: 'btn btn-quiet', onclick() { const c = structuredClone(s); c.moves = []; c.ball = []; c.note = ''; play.steps.splice(D.k + 1, 0, c); D.k++; changed(); } }, 'Add step after'),
+        h('button', { class: 'btn btn-danger', onclick() { play.steps.splice(D.k, 1); D.k = Math.min(D.k, play.steps.length - 1); changed(); } }, 'Delete step')),
+    ];
+  }
+
+  function renderPanel() {
+    panel.replaceChildren(stepTabs(), h('div', { class: 'd-body' }, D.k < 0 ? setupPanel() : stepPanel()));
+  }
+
+  // ----- export / import -----
+  const plain = () => JSON.stringify(play, null, 1);
+  async function exportTeam() {
+    const box = await encryptJSON(ctx.key, play);
+    download(`${play.id}.enc.json`, JSON.stringify(box));
+    toast('Team file downloaded. Upload it to the plays folder on GitHub.');
+  }
+  async function importFile(file) {
+    try {
+      let data = JSON.parse(await file.text());
+      if (data.ct && data.iv) data = await decryptJSON(ctx.key, data);
+      if (!data.pieces || !data.steps) throw new Error('not a play');
+      data.id = data.id || uid();
+      ctx.drafts[data.id] = normalizePlay(data);
+      ctx.saveDrafts();
+      ctx.go('#design-' + data.id);
+      toast(`Imported "${data.title}".`);
+    } catch {
+      toast('That file is not a Hawks play, or it was locked with a different password.');
+    }
+  }
+  const fileIn = h('input', { type: 'file', accept: '.json,application/json', hidden: true, onchange(e) { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; } });
+
+  let armDelete = false;
+  const delBtn = h('button', {
+    class: 'btn btn-danger',
+    onclick() {
+      if (!armDelete) { armDelete = true; delBtn.textContent = 'Tap again to delete'; setTimeout(() => { armDelete = false; delBtn.textContent = 'Delete draft'; }, 3000); return; }
+      delete ctx.drafts[play.id]; ctx.saveDrafts(); toast('Draft deleted.'); ctx.go('#');
+    },
+  }, 'Delete draft');
+
+  // ----- layout -----
+  const title = h('input', { id: 'title', class: 'd-title', value: play.title, 'aria-label': 'Play name', oninput(e) { play.title = e.target.value || 'Untitled play'; save(); } });
+  const desc = h('input', { id: 'desc', value: play.description || '', placeholder: 'One-line summary for players (optional)', 'aria-label': 'Summary', oninput(e) { play.description = e.target.value; save(); } });
+  const cat = h('select', { id: 'cat', 'aria-label': 'Category', onchange(e) { play.category = e.target.value; save(); } },
+    CATEGORIES.map((c) => h('option', { value: c, selected: c === play.category }, c)));
+  const fieldSel = h('select', { id: 'fieldsel', 'aria-label': 'Field', onchange(e) { play.field = e.target.value; changed(); } },
+    h('option', { value: 'half', selected: play.field === 'half' }, 'Half field'),
+    h('option', { value: 'full', selected: play.field === 'full' }, 'Full field'));
+
+  main.append(
+    h('section', { class: 'd-head' },
+      h('div', { class: 'd-meta' }, title, desc, h('div', { class: 'row' }, cat, fieldSel, savedNote)),
+      h('div', { class: 'd-actions' },
+        h('button', { class: 'btn btn-primary', onclick() { save(); ctx.saveDrafts(); ctx.go('#draft-' + play.id); } }, '▶ Preview'),
+        h('details', { class: 'menu' },
+          h('summary', { class: 'btn btn-quiet' }, 'Share & files'),
+          h('div', { class: 'menu-body' },
+            h('button', { onclick: async () => { toast(await copyText(plain(), fallback) ? 'Play data copied. Paste it to Claude to edit or publish.' : 'Select the text below and copy it.'); } }, 'Copy play data (send to Claude)'),
+            PREVIEW ? h('p', { class: 'muted' }, 'File downloads and printing work on the team site.') : [
+              h('button', { onclick: exportTeam }, 'Download team file (.enc.json)'),
+              h('button', { onclick: () => download(`${play.id}.json`, plain()) }, 'Download editable file (.json)'),
+              h('button', { onclick: () => fileIn.click() }, 'Import a play file'),
+              h('button', { onclick: () => printBlank(play.field) }, `Print blank ${play.field} field for sketching`),
+            ],
+            fallback)),
+        delBtn, fileIn)),
+    h('div', { class: 'designer ' + play.field },
+      h('div', { class: 'd-board' }, svg, hint),
+      panel));
+
+  redraw();
+  renderPanel();
+  save();
+  return () => { document.removeEventListener('keydown', onKey); ctx.saveDrafts(); };
+}

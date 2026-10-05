@@ -7,5 +7,13 @@
   "v": 1,
   "iv": "K5W48YEQRxDYMnmF",
   "ct": "61xrwD06AeyBmdIjwjvwVs40u9hcBg2zT06vZscVse+5"
+ },
+ "coach": {
+  "salt": "Wxb7AfP/bSzg8KaPuMGJnw==",
+  "box": {
+   "v": 1,
+   "iv": "3HMD6B3kL+7gqpUH",
+   "ct": "/vJmwPOVGo/Fs1NeGIQoA5koBiB/vmUKwNY/zfXGNA=="
+  }
  }
 }

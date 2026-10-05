@@ -11,6 +11,7 @@ const DRAFTS_KEY = 'hawks.drafts';
 
 const ctx = {
   key: null,
+  role: null,
   keyinfo: null,
   published: [],
   drafts: {},
@@ -28,17 +29,33 @@ async function fetchJSON(path) {
 }
 
 // ---------- unlock ----------
-async function tryUnlock(pw) {
+// Players unlock with the team password. Coaches use their own password, which opens a
+// sealed copy of the team password stored in keyinfo.json, so they can read and publish plays.
+async function tryUnlock(role, pw) {
   ctx.keyinfo = ctx.keyinfo || await fetchJSON('plays/keyinfo.json');
-  const key = await deriveKey(pw, ctx.keyinfo.salt, ctx.keyinfo.iter);
+  const info = ctx.keyinfo;
+  let teamPw = pw;
+  if (role === 'coach') {
+    if (!info.coach) return false;
+    try {
+      const coachKey = await deriveKey(pw, info.coach.salt, info.iter);
+      teamPw = await decryptJSON(coachKey, info.coach.box);
+    } catch {
+      return false;
+    }
+  }
+  const key = await deriveKey(teamPw, info.salt, info.iter);
   try {
-    if ((await decryptJSON(key, ctx.keyinfo.check)) !== CHECK_TEXT) return false;
+    if ((await decryptJSON(key, info.check)) !== CHECK_TEXT) return false;
   } catch {
     return false;
   }
   ctx.key = key;
+  ctx.role = role;
   return true;
 }
+
+const isCoach = () => ctx.role === 'coach';
 
 async function loadPlays() {
   const idx = await fetchJSON('plays/index.json').catch(() => ({ files: [] }));
@@ -53,7 +70,20 @@ async function loadPlays() {
 
 function renderLock(msg) {
   app.className = 'lock-screen';
-  const pw = h('input', { id: 'pw', type: 'password', autocomplete: 'current-password', placeholder: 'Team password', required: true });
+  let role = store.get('hawks.role', 'player');
+  const pw = h('input', { id: 'pw', type: 'password', autocomplete: 'current-password', required: true });
+  const roleBtns = ['player', 'coach'].map((r) => h('button', {
+    type: 'button', 'data-role': r,
+    onclick() { role = r; store.set('hawks.role', r); syncRole(); pw.focus(); },
+  }, r === 'player' ? 'Player' : 'Coach'));
+  function syncRole() {
+    for (const b of roleBtns) {
+      const on = b.dataset.role === role;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+    }
+    pw.placeholder = role === 'coach' ? 'Coach password' : 'Team password';
+  }
   const remember = h('input', { id: 'remember', type: 'checkbox', checked: true });
   const err = h('p', { class: 'lock-err', role: 'alert' }, msg || '');
   const btn = h('button', { class: 'btn btn-primary', type: 'submit' }, 'Unlock playbook');
@@ -63,13 +93,15 @@ function renderLock(msg) {
       e.preventDefault();
       btn.disabled = true; btn.textContent = 'Checking…'; err.textContent = '';
       try {
-        if (await tryUnlock(pw.value)) {
-          if (remember.checked) store.set(PW_KEY, pw.value); else store.del(PW_KEY);
+        if (await tryUnlock(role, pw.value)) {
+          if (remember.checked) store.set(PW_KEY, { role, pw: pw.value }); else store.del(PW_KEY);
           await loadPlays();
           route();
           return;
         }
-        err.textContent = "That password didn't work. Ask Coach for the team password.";
+        err.textContent = role === 'coach'
+          ? "That isn't the coach password. Players should choose Player."
+          : "That password didn't work. Ask Coach for the team password.";
       } catch (ex) {
         err.textContent = 'Could not reach the playbook files. Check your connection and try again.';
         console.error(ex);
@@ -79,17 +111,20 @@ function renderLock(msg) {
   },
     h('img', { src: 'assets/logo-outline.png', alt: 'Annapolis Hawks', class: 'lock-logo' }),
     h('h1', { class: 'lock-title' }, 'Playbook'),
-    h('label', { for: 'pw', class: 'sr-only' }, 'Team password'),
+    h('div', { class: 'role-pick', role: 'group', 'aria-label': 'I am a' }, h('span', {}, 'I am a'), h('div', { class: 'seg' }, roleBtns)),
+    h('label', { for: 'pw', class: 'sr-only' }, 'Password'),
     pw,
     h('label', { class: 'check' }, remember, ' Remember on this device'),
     btn, err);
   app.replaceChildren(form);
+  syncRole();
   pw.focus();
 }
 
 function lock() {
   store.del(PW_KEY);
   ctx.key = null;
+  ctx.role = null;
   location.hash = '';
   renderLock();
 }
@@ -102,8 +137,9 @@ function shell(active, ...content) {
       h('span', {}, 'PLAYBOOK')),
     h('nav', {},
       h('a', { href: '#', class: active === 'home' ? 'on' : '' }, 'Plays'),
-      h('a', { href: '#design', class: active === 'design' ? 'on' : '' }, 'Designer'),
-      h('button', { class: 'linkish', onclick: lock, title: 'Lock the playbook on this device' }, 'Lock')));
+      isCoach() ? h('a', { href: '#design', class: active === 'design' ? 'on' : '' }, 'Designer') : null,
+      h('span', { class: 'role-badge' }, isCoach() ? 'Coach' : 'Player'),
+      h('button', { class: 'linkish', onclick: lock, title: 'Sign out on this device' }, 'Sign out')));
   const main = h('main', { class: 'main' }, ...content);
   app.replaceChildren(nav, main);
   return main;
@@ -145,10 +181,10 @@ function renderHome() {
       (!q || (p.title + ' ' + (p.description || '')).toLowerCase().includes(q));
     const list = ctx.published.filter(match);
     grid.replaceChildren(...(list.length ? list.map((p) => card(p, false))
-      : [h('p', { class: 'empty' }, ctx.published.length ? 'No plays match that search.' : 'No plays published yet. Build one in the Designer.')]));
+      : [h('p', { class: 'empty' }, ctx.published.length ? 'No plays match that search.' : isCoach() ? 'No plays published yet. Build one in the Designer.' : 'No plays published yet. Check back after Coach adds some.')]));
     const drafts = Object.values(ctx.drafts).filter(match).sort((a, b) => (b.updated || 0) - (a.updated || 0));
     draftGrid.replaceChildren(...drafts.map((p) => card(p, true)));
-    draftSec.hidden = !drafts.length;
+    draftSec.hidden = !drafts.length || !isCoach();
   }
 
   const draftSec = h('section', { class: 'sec' },
@@ -164,7 +200,7 @@ function renderHome() {
         h('p', { class: 'eyebrow' }, 'Annapolis Hawks · Middle School'),
         h('h1', {}, 'Team Playbook'),
         h('p', { class: 'muted' }, `${nPlays} play${nPlays === 1 ? '' : 's'} · ${nDrills} drill${nDrills === 1 ? '' : 's'}. Tap one to watch it run, then step through it at your own pace.`)),
-      h('a', { href: '#design', class: 'btn' }, '+ New play')),
+      isCoach() ? h('a', { href: '#design', class: 'btn' }, '+ New play') : null),
     h('div', { class: 'toolbar' },
       h('input', { id: 'search', type: 'search', placeholder: 'Search plays', 'aria-label': 'Search plays', oninput(e) { q = e.target.value.trim().toLowerCase(); fill(); } }),
       chipsRow),
@@ -304,7 +340,7 @@ function renderViewer(play, isDraft) {
           h('span', { class: 'lg lg-run' }, 'Run / cut'), h('span', { class: 'lg lg-pass' }, 'Pass'),
           h('span', { class: 'lg lg-dodge' }, 'Dodge'), h('span', { class: 'lg lg-pick' }, 'Pick')),
         h('div', { class: 'aside-actions' },
-          h('button', { class: 'btn btn-quiet', onclick: edit }, isDraft ? 'Keep editing' : 'Edit in Designer'),
+          isCoach() ? h('button', { class: 'btn btn-quiet', onclick: edit }, isDraft ? 'Keep editing' : 'Edit in Designer') : null,
           PREVIEW ? null : h('button', { class: 'btn btn-quiet', onclick: () => printPlay(play) }, 'Print sheet')))));
   draw();
 }
@@ -313,8 +349,13 @@ function renderViewer(play, isDraft) {
 function route() {
   if (teardown) { teardown(); teardown = null; }
   if (!ctx.key) return;
-  const hash = location.hash.slice(1);
+  let hash = location.hash.slice(1);
   window.scrollTo(0, 0);
+  if (!isCoach() && (hash === 'design' || hash.startsWith('design-') || hash.startsWith('draft-'))) {
+    toast('Only coaches can create or edit plays.');
+    history.replaceState(null, '', location.pathname);
+    hash = '';
+  }
   if (hash.startsWith('play-') || hash.startsWith('draft-')) {
     const isDraft = hash.startsWith('draft-');
     const id = hash.slice(isDraft ? 6 : 5);
@@ -334,10 +375,11 @@ function route() {
 window.addEventListener('hashchange', route);
 
 (async function boot() {
-  const saved = store.get(PW_KEY, null);
-  if (saved) {
+  let saved = store.get(PW_KEY, null);
+  if (typeof saved === 'string') saved = { role: 'player', pw: saved };
+  if (saved && saved.pw) {
     try {
-      if (await tryUnlock(saved)) { await loadPlays(); route(); return; }
+      if (await tryUnlock(saved.role === 'coach' ? 'coach' : 'player', saved.pw)) { await loadPlays(); route(); return; }
     } catch (e) { console.error(e); }
   }
   renderLock();

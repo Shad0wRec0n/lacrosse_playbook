@@ -1,6 +1,6 @@
 // Draws a play onto an <svg>: field, arrows, players, ball.
 import { el, drawField, viewBoxFor } from './field.js';
-import { allStates, frame, staticFrame, ballSegments, bezier } from './engine.js';
+import { allStates, frame, staticFrame, ballSegments, routeSamples, phaseCount, hasPhases } from './engine.js';
 
 export const R = 1.7; // player radius in yards
 // Pieces are drawn larger on the full field so labels stay readable.
@@ -25,12 +25,6 @@ function ensureDefs() {
 }
 
 // ---- path helpers ----
-export function samplePath(a, b, via, n = 48) {
-  const pts = [];
-  for (let i = 0; i <= n; i++) pts.push(bezier(a, b, via, i / n));
-  return pts;
-}
-
 function lengths(pts) {
   const cum = [0];
   for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
@@ -95,18 +89,20 @@ export function drawStepArrows(g, play, step, s0, opts = {}) {
   const PR = R * pieceScale(play.field);
   const types = Object.fromEntries(play.pieces.map((p) => [p.id, p.type]));
   const wrap = el('g', { class: opts.faded ? 'arrows faded' : 'arrows' }, g);
+  // When a step runs in phases, number each arrow so players can see the order.
+  const badges = !opts.faded && hasPhases(step) && phaseCount(step) > 1;
   for (const m of step.moves) {
     const a = s0.pos[m.id];
     if (!a) continue;
-    const b = { x: m.to[0], y: m.to[1] };
     const team = types[m.id] === 'X' ? 'opp' : 'home';
     if (opts.ghosts) el('circle', { cx: a.x, cy: a.y, r: PR, class: 'ghost ghost-' + team, 'data-ids': m.id }, wrap);
-    let pts = trim(samplePath(a, b, m.via), PR + 0.15, m.kind === 'pick' ? PR + 0.5 : PR + 0.1);
+    let pts = trim(routeSamples(a, m), PR + 0.15, m.kind === 'pick' ? PR + 0.5 : PR + 0.1);
     if (!pts) continue;
     if (m.kind === 'dodge') pts = zigzag(pts);
     const attrs = { d: toD(pts), class: `arw arw-${team} arw-${m.kind || 'run'}`, 'data-ids': m.id };
     if (m.kind !== 'pick') attrs['marker-end'] = `url(#ah-${team})`;
     el('path', attrs, wrap);
+    if (badges) badge(wrap, pts, m.seq, m.id);
     if (m.kind === 'pick') {
       const e = pts[pts.length - 1], f = pts[pts.length - 2];
       const dx = e.x - f.x, dy = e.y - f.y, n = Math.hypot(dx, dy) || 1;
@@ -120,8 +116,17 @@ export function drawStepArrows(g, play, step, s0, opts = {}) {
     const pts = trim([A, B], 0.4, endTrim);
     if (!pts) continue;
     el('path', { d: toD(pts), class: 'arw arw-ball arw-' + e.type, 'marker-end': 'url(#ah-ball)', 'data-ids': ids }, wrap);
+    if (badges) badge(wrap, pts, e.seq, ids);
   }
   return wrap;
+}
+
+function badge(g, pts, seq, ids) {
+  const f = pts[0], l = pts[pts.length - 1];
+  const p = pts.length > 4 ? pts[Math.round((pts.length - 1) * 0.3)] : { x: f.x + (l.x - f.x) * 0.3, y: f.y + (l.y - f.y) * 0.3 };
+  const b = el('g', { class: 'phase-badge', transform: `translate(${p.x.toFixed(2)} ${p.y.toFixed(2)})`, 'data-ids': ids }, g);
+  el('circle', { r: 0.85 }, b);
+  el('text', { 'text-anchor': 'middle', dy: '0.36em', 'font-size': 1.1 }, b).textContent = String((seq ?? 0) + 1);
 }
 
 // ---- board ----

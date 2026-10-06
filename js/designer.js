@@ -1,7 +1,7 @@
 // Play Designer: place pieces, then build the play step by step by dragging.
 import { createBoard } from './render.js';
 import { el, fieldBounds, nearestGoalY } from './field.js';
-import { normalizePlay, ballAfter, STICK, ORDER_LABELS, DEFAULT_DUR } from './engine.js';
+import { normalizePlay, ballAfter, STICK, DEFAULT_DUR, ensurePhases, compactPhases, phaseCount, routeControls, legMid } from './engine.js';
 import { encryptJSON, decryptJSON } from './crypto.js';
 import { h, svgEl, toast, CATEGORIES, PREVIEW, download, copyText, uid } from './ui.js';
 import { printBlank } from './print.js';
@@ -40,6 +40,7 @@ export function renderDesigner(main, ctx, id) {
     play = pub ? structuredClone(pub) : newPlay();
   } else play = newPlay();
 
+  play.steps.forEach(ensurePhases);
   const D = { k: play.steps.length ? 0 : -1, tool: 'move', add: null, kind: 'run', sel: null, drag: null };
   let board = null;
   let saveTimer = 0;
@@ -58,7 +59,7 @@ export function renderDesigner(main, ctx, id) {
     saveTimer = setTimeout(() => { ctx.saveDrafts(); savedNote.textContent = 'Saved on this device'; }, 250);
     savedNote.textContent = 'Saving…';
   }
-  function changed() { save(); redraw(); renderPanel(); }
+  function changed() { if (D.k >= 0 && step()) compactPhases(step()); save(); redraw(); renderPanel(); }
 
   // ----- geometry -----
   function toField(ev) {
@@ -82,9 +83,14 @@ export function renderDesigner(main, ctx, id) {
       for (const m of step().moves) {
         const a = s0.pos[m.id];
         if (!a) continue;
-        const mid = m.via ? { x: m.via[0], y: m.via[1] } : { x: (a.x + m.to[0]) / 2, y: (a.y + m.to[1]) / 2 };
         el('circle', { cx: m.to[0], cy: m.to[1], r: 1.1, class: 'h-end', 'data-handle': 'end:' + m.id }, ov);
-        el('rect', { x: mid.x - 0.6, y: mid.y - 0.6, width: 1.2, height: 1.2, transform: `rotate(45 ${mid.x} ${mid.y})`, class: 'h-via', 'data-handle': 'via:' + m.id }, ov);
+        // A diamond on every leg adds a bend point there; bend points can be dragged or tapped away.
+        const legs = routeControls(a, m).length - 1;
+        for (let i = 0; i < legs; i++) {
+          const mid = legMid(a, m, i);
+          el('rect', { x: mid.x - 0.55, y: mid.y - 0.55, width: 1.1, height: 1.1, transform: `rotate(45 ${mid.x} ${mid.y})`, class: 'h-via', 'data-handle': `ins:${m.id}:${i}` }, ov);
+        }
+        (m.path || []).forEach(([x, y], i) => el('circle', { cx: x, cy: y, r: 0.75, class: 'h-wp', 'data-handle': `wp:${m.id}:${i}` }, ov));
       }
     }
     if (D.k < 0 && D.sel && board.nodes[D.sel]) board.nodes[D.sel].classList.add('is-selected');
@@ -95,7 +101,7 @@ export function renderDesigner(main, ctx, id) {
   function setHint() {
     const t = {
       move: D.k < 0 ? 'Drag pieces to their starting spots. Tap a piece to rename or delete it.'
-        : 'Drag a player to where they go in this step. Drag the round handle to adjust; drag the diamond to bend the path.',
+        : 'Drag a player to where they go. Drag a diamond to bend the route (add as many bends as you like); tap a bend point to remove it.',
       add: `Tap the field to place ${D.add?.label || 'the piece'}.`,
       ball: 'Tap a player or the coach to give them the ball, or tap the field to drop a loose ball.',
       pass: 'Tap the player who receives the pass.',
@@ -162,9 +168,12 @@ export function renderDesigner(main, ctx, id) {
       s.moves = s.moves.filter((mm) => mm.id !== pid);
       return;
     }
-    if (!m) { m = { id: pid, kind: D.kind, to: [0, 0] }; s.moves.push(m); }
+    if (!m) { m = { id: pid, kind: D.kind, to: [0, 0], seq: lastPhase() }; s.moves.push(m); }
     m.to = [r1(to.x), r1(to.y)];
   }
+
+  // New actions join the step's latest phase; reorder them in the panel.
+  const lastPhase = () => { const s = step(); return s.moves.length || s.ball.length ? phaseCount(s) - 1 : 0; };
 
   function ballNow() { return ballAfter(step(), board.states[D.k]); }
   function hasPickup() { return step().ball.some((e) => e.type === 'pickup'); }
@@ -174,7 +183,7 @@ export function renderDesigner(main, ctx, id) {
     const b = ballNow();
     if (!b.holder) return toast('Nobody has the ball at this point. Use Scoop first, or give someone the ball in Setup.');
     if (b.holder === to) return toast(`${piece(to)?.label} already has the ball.`);
-    step().ball.push({ type: 'pass', from: b.holder, to });
+    step().ball.push({ type: 'pass', from: b.holder, to, seq: lastPhase() });
     changed();
   }
 
@@ -187,7 +196,7 @@ export function renderDesigner(main, ctx, id) {
     const y = m ? m.to[1] : s0.pos[b.holder].y;
     const gy = nearestGoalY(play.field, y);
     const x = (m ? m.to[0] : s0.pos[b.holder].x) < 30 ? 30.7 : 29.3; // aim for the far pipe
-    step().ball.push({ type: 'shot', from: b.holder, at: [x, gy] });
+    step().ball.push({ type: 'shot', from: b.holder, at: [x, gy], seq: lastPhase() });
     changed();
   }
 
@@ -195,7 +204,7 @@ export function renderDesigner(main, ctx, id) {
     if (hasPickup()) return toast('Start a new step for the next ground ball.');
     const b = ballNow();
     if (!b.holder && !b.ball) return toast('There is no ball yet. In Setup, give the ball to a player or the coach.');
-    const e = { type: 'roll', at: [r1(at.x), r1(at.y)] };
+    const e = { type: 'roll', at: [r1(at.x), r1(at.y)], seq: lastPhase() };
     if (b.holder) e.from = b.holder;
     step().ball.push(e);
     setTool('move');
@@ -206,10 +215,11 @@ export function renderDesigner(main, ctx, id) {
     const b = ballNow();
     if (b.holder || !b.ball) return toast('There is no loose ball to scoop. Add a ground ball first.');
     const s = step();
+    const seq = lastPhase();
     if (!s.moves.some((m) => m.id === by)) {
-      s.moves.push({ id: by, kind: 'run', to: [r1(b.ball.x - STICK.x), r1(b.ball.y - STICK.y)] });
+      s.moves.push({ id: by, kind: 'run', to: [r1(b.ball.x - STICK.x), r1(b.ball.y - STICK.y)], seq });
     }
-    s.ball.push({ type: 'pickup', by });
+    s.ball.push({ type: 'pickup', by, seq });
     setTool('move');
     changed();
   }
@@ -223,8 +233,8 @@ export function renderDesigner(main, ctx, id) {
     const pid = pc?.getAttribute('data-id');
 
     if (handle && D.tool === 'move') {
-      const [kind, hid] = handle.getAttribute('data-handle').split(':');
-      D.drag = { kind, id: hid, start: at, moved: false };
+      const [kind, hid, i] = handle.getAttribute('data-handle').split(':');
+      D.drag = { kind, id: hid, i: +i, start: at, moved: false };
     } else if (D.tool === 'add') {
       return addPiece(at);
     } else if (D.tool === 'ball') {
@@ -260,9 +270,13 @@ export function renderDesigner(main, ctx, id) {
       p.x = r1(at.x); p.y = r1(at.y);
     } else if (d.kind === 'piece' || d.kind === 'end') {
       setMove(d.id, at);
-    } else if (d.kind === 'via') {
+    } else if (d.kind === 'ins' || d.kind === 'wp') {
       const m = step().moves.find((mm) => mm.id === d.id);
-      if (m) m.via = [r1(at.x), r1(at.y)];
+      if (m) {
+        m.path = m.path || [];
+        if (d.kind === 'ins') { m.path.splice(d.i, 0, [0, 0]); d.kind = 'wp'; }
+        m.path[d.i] = [r1(at.x), r1(at.y)];
+      }
     }
     redraw();
   });
@@ -273,6 +287,10 @@ export function renderDesigner(main, ctx, id) {
     if (!d) return;
     if (!d.moved) {
       if (d.kind === 'setup' || d.kind === 'piece') { D.sel = d.id; redraw(); renderPanel(); }
+      if (d.kind === 'wp') {
+        const m = step().moves.find((mm) => mm.id === d.id);
+        if (m?.path) { m.path.splice(d.i, 1); if (!m.path.length) delete m.path; changed(); }
+      }
       return;
     }
     changed();
@@ -338,18 +356,76 @@ export function renderDesigner(main, ctx, id) {
     ];
   }
 
+  // Moving an action to an earlier or later phase. Phase 0 is the start of the step.
+  function shiftPhase(s, x, dir) {
+    const all = [...s.moves, ...s.ball];
+    if (dir < 0) {
+      if (x.seq > 0) x.seq -= 1;
+      else if (all.some((y) => y !== x && y.seq === 0)) for (const y of all) if (y !== x) y.seq += 1;
+    } else if (all.some((y) => y !== x && y.seq >= x.seq)) {
+      x.seq += 1;
+    }
+    compactPhases(s);
+    changed();
+  }
+
+  function actionRow(s, x, isMove) {
+    const rm = () => { if (isMove) s.moves = s.moves.filter((y) => y !== x); else s.ball = s.ball.filter((y) => y !== x); compactPhases(s); changed(); };
+    const label = isMove ? h('span', {}, piece(x.id)?.label || x.id) : h('span', {}, describe(x));
+    const extras = isMove ? [
+      h('select', { 'aria-label': 'Movement type', onchange(e) { x.kind = e.target.value; changed(); } },
+        [['run', 'Run / cut'], ['dodge', 'Dodge'], ['pick', 'Pick']].map(([v, l]) => h('option', { value: v, selected: x.kind === v }, l))),
+      x.path?.length ? h('select', { 'aria-label': 'Route shape', onchange(e) { x.sharp = e.target.value === 'sharp'; if (!x.sharp) delete x.sharp; changed(); } },
+        h('option', { value: 'curve', selected: !x.sharp }, 'Curved'),
+        h('option', { value: 'sharp', selected: !!x.sharp }, 'Sharp corners')) : null,
+      x.path?.length ? h('button', { class: 'linkish', onclick() { delete x.path; delete x.sharp; changed(); } }, 'Straighten') : null,
+    ] : [];
+    return h('li', {
+      draggable: 'true',
+      ondragstart(e) { D.dragItem = x; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', 'action'); e.currentTarget.classList.add('dragging'); },
+      ondragend(e) { e.currentTarget.classList.remove('dragging'); },
+    },
+      h('span', { class: 'grip', 'aria-hidden': 'true' }, '⠿'),
+      label, ...extras,
+      h('span', { class: 'order-btns' },
+        h('button', { class: 'x', title: 'Happen earlier', 'aria-label': 'Move to an earlier phase', onclick: () => shiftPhase(s, x, -1) }, '▲'),
+        h('button', { class: 'x', title: 'Happen later', 'aria-label': 'Move to a later phase', onclick: () => shiftPhase(s, x, 1) }, '▼'),
+        h('button', { class: 'x', 'aria-label': 'Remove', onclick: rm }, '✕')));
+  }
+
+  function phaseList(s) {
+    if (!s.moves.length && !s.ball.length) return h('p', { class: 'muted' }, 'Nothing yet. Drag a player to start.');
+    const n = phaseCount(s);
+    const dropZone = (w, cls, ...kids) => h('div', {
+      class: cls,
+      ondragover(e) { if (D.dragItem) { e.preventDefault(); e.currentTarget.classList.add('over'); } },
+      ondragleave(e) { e.currentTarget.classList.remove('over'); },
+      ondrop(e) {
+        e.preventDefault();
+        const x = D.dragItem; D.dragItem = null;
+        if (!x) return;
+        x.seq = w; compactPhases(s); changed();
+      },
+    }, ...kids);
+    const groups = [];
+    for (let w = 0; w < n; w++) {
+      const rows = [
+        ...s.ball.filter((e) => e.seq === w).map((e) => actionRow(s, e, false)),
+        ...s.moves.filter((m) => m.seq === w).map((m) => actionRow(s, m, true)),
+      ];
+      groups.push(dropZone(w, 'phase',
+        h('div', { class: 'phase-head' }, h('b', {}, `Phase ${w + 1}`), h('span', {}, w === 0 ? 'starts the step' : `after phase ${w}`)),
+        h('ul', { class: 'actions' }, rows)));
+    }
+    groups.push(dropZone(n, 'phase phase-new', 'Drop here to make it happen after everything else'));
+    return h('div', { class: 'phases' }, groups);
+  }
+
   function stepPanel() {
     const s = step();
-    const moves = s.moves.map((m) => h('li', {},
-      h('span', {}, piece(m.id)?.label || m.id),
-      h('select', { 'aria-label': 'Movement type', onchange(e) { m.kind = e.target.value; changed(); } },
-        [['run', 'Run / cut'], ['dodge', 'Dodge'], ['pick', 'Pick']].map(([v, l]) => h('option', { value: v, selected: m.kind === v }, l))),
-      m.via ? h('button', { class: 'linkish', onclick() { delete m.via; changed(); } }, 'Straighten') : null,
-      h('button', { class: 'x', 'aria-label': 'Remove this move', onclick() { s.moves = s.moves.filter((x) => x !== m); changed(); } }, '✕')));
-    const events = s.ball.map((e) => h('li', {}, h('span', {}, describe(e)),
-      h('button', { class: 'x', 'aria-label': 'Remove', onclick() { s.ball = s.ball.filter((x) => x !== e); changed(); } }, '✕')));
     const note = h('textarea', { id: 'note', rows: 4, placeholder: 'What should players read or say on this step?', oninput(e) { s.note = e.target.value; save(); } });
     note.value = s.note;
+    const durLabel = h('label', { class: 'label', for: 'dur' }, `Speed: ${s.dur.toFixed(1)} seconds per phase`);
     return [
       h('h3', {}, `Step ${D.k + 1} of ${play.steps.length}`),
       h('p', { class: 'label' }, 'Next drag draws a'),
@@ -362,17 +438,13 @@ export function renderDesigner(main, ctx, id) {
         h('button', { class: 'pal-btn', onclick: addShot }, 'Shot')),
       h('label', { class: 'label', for: 'note' }, 'Coaching note'),
       note,
-      h('p', { class: 'label' }, 'In this step'),
-      moves.length || events.length ? h('ul', { class: 'actions' }, moves, events) : h('p', { class: 'muted' }, 'Nothing yet. Drag a player to start.'),
-      h('details', { class: 'timing' },
-        h('summary', {}, 'Timing'),
-        h('label', { class: 'label', for: 'order' }, 'Order'),
-        h('select', { id: 'order', onchange(e) { s.order = e.target.value; changed(); } },
-          Object.entries(ORDER_LABELS).map(([v, l]) => h('option', { value: v, selected: s.order === v }, l))),
-        h('label', { class: 'label', for: 'dur' }, `Length: ${s.dur.toFixed(1)} seconds`),
-        h('input', { id: 'dur', type: 'range', min: 1, max: 5, step: 0.1, value: s.dur, oninput(e) { s.dur = +e.target.value; e.target.previousSibling.textContent = `Length: ${s.dur.toFixed(1)} seconds`; save(); } })),
+      h('p', { class: 'label' }, 'Who moves when'),
+      h('p', { class: 'muted small' }, 'Actions in the same phase happen together. Drag an action to another phase, or use ▲ ▼.'),
+      phaseList(s),
+      durLabel,
+      h('input', { id: 'dur', type: 'range', min: 0.8, max: 4, step: 0.1, value: s.dur, oninput(e) { s.dur = +e.target.value; durLabel.textContent = `Speed: ${s.dur.toFixed(1)} seconds per phase`; save(); } }),
       h('div', { class: 'row' },
-        h('button', { class: 'btn btn-quiet', onclick() { const c = structuredClone(s); c.moves = []; c.ball = []; c.note = ''; play.steps.splice(D.k + 1, 0, c); D.k++; changed(); } }, 'Add step after'),
+        h('button', { class: 'btn btn-quiet', onclick() { const c = blankStep(); c.dur = s.dur; play.steps.splice(D.k + 1, 0, c); D.k++; changed(); } }, 'Add step after'),
         h('button', { class: 'btn btn-danger', onclick() { play.steps.splice(D.k, 1); D.k = Math.min(D.k, play.steps.length - 1); changed(); } }, 'Delete step')),
     ];
   }

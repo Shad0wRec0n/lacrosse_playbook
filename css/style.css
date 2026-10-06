@@ -172,6 +172,9 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
 .arw-shot { stroke-width: 0.5; }
 .arw-roll { stroke-dasharray: 0.2 0.6; stroke-width: 0.4; }
 .pick-bar { stroke-width: 0.5; }
+.phase-badge circle { fill: var(--home); stroke: var(--ball); stroke-width: 0.18; }
+.phase-badge text { fill: var(--ball); font-family: var(--display); font-weight: 800; }
+.has-focus .phase-badge:not(.is-focus) { opacity: 0.25; }
 .mk-home { fill: var(--chalk); }
 .mk-opp { fill: var(--opp-line); }
 .mk-ball { fill: var(--ball); }
@@ -229,6 +232,20 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
 .actions li { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0.5rem; background: var(--panel-2); border-radius: 6px; flex-wrap: wrap; }
 .actions li > span { font-weight: 600; flex: 1 1 auto; min-width: 0; }
 .actions select { padding: 0.2em 0.4em; font-size: 0.9rem; }
+.small { font-size: 0.85rem; }
+.phases { display: grid; gap: 0.5rem; }
+.phase { border: 1px solid var(--line); border-radius: 8px; padding: 0.5rem; display: grid; gap: 0.4rem; transition: border-color .15s, background .15s; }
+.phase.over { border-color: var(--ball); background: color-mix(in srgb, var(--ball) 8%, transparent); }
+.phase-head { display: flex; gap: 0.5rem; align-items: baseline; font-size: 0.85rem; }
+.phase-head b { font-family: var(--display); font-size: 1rem; color: var(--ball); text-transform: uppercase; letter-spacing: 0.04em; }
+.phase-head span { color: var(--muted); }
+.phase-new { border-style: dashed; color: var(--muted); font-size: 0.85rem; text-align: center; padding-block: 0.6rem; }
+.actions li[draggable] { cursor: grab; }
+.actions li.dragging { opacity: 0.4; }
+.actions li > .grip, .actions li > .order-btns { flex: 0 0 auto; }
+.grip { color: var(--muted); }
+.order-btns { display: inline-flex; margin-left: auto; }
+.h-wp { fill: var(--chalk); stroke: var(--home); stroke-width: 0.18; cursor: move; }
 .x { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 1rem; padding: 0.2em 0.4em; }
 .x:hover { color: var(--danger); }
 .sel-box { display: grid; gap: 0.5rem; padding-top: 0.6rem; border-top: 1px solid var(--line); margin-top: 0.4rem; }

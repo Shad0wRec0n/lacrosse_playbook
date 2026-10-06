@@ -1,7 +1,7 @@
 // Hawks Playbook: password gate, playbook list, animated play viewer, routing.
 import { deriveKey, decryptJSON, CHECK_TEXT } from './crypto.js';
 import { createBoard } from './render.js';
-import { normalizePlay, DEFAULT_DUR } from './engine.js';
+import { normalizePlay, stepSeconds } from './engine.js';
 import { $, h, svgEl, toast, store, CATEGORIES, PREVIEW, ICON } from './ui.js';
 import { renderDesigner } from './designer.js';
 import { printPlay } from './print.js';
@@ -270,7 +270,7 @@ function renderViewer(play, isDraft) {
         else { pause(); ended = true; draw(); return; }
       }
     } else {
-      u += dt / (play.steps[k].dur || DEFAULT_DUR);
+      u += dt / stepSeconds(play.steps[k]);
       if (u >= 1) { u = 1; hold = k < n - 1 ? 0.7 : 1.4; }
     }
     draw();

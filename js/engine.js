@@ -2,7 +2,7 @@
 //
 // play = {
 //   id, title, category, field: 'half'|'full', description,
-//   pieces: [{ id, type: 'O'|'X'|'cone'|'coach', label, x, y }],
+//   pieces: [{ id, type: 'O'|'X'|'cone'|'coach'|'box', label, x, y }],   (box = substitution box, never moves)
 //   ball:   { holder: id } | { at: [x, y] },
 //   steps:  [{ note, dur, looks?: [{ from, to: pieceId | 'goal' }],
 //              moves: [{ id, to:[x,y], path?:[[x,y]...], sharp?, kind:'run'|'dodge'|'pick', seq? }],

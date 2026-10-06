@@ -75,6 +75,11 @@ export function drawPiece(g, p) {
     el('circle', { r: R, class: 'pc-body' }, n);
     const t = el('text', { class: 'pc-label', 'text-anchor': 'middle', dy: '0.36em', 'font-size': p.label.length > 2 ? 1.05 : 1.35 }, n);
     t.textContent = p.label;
+  } else if (p.type === 'box') {
+    // Substitution box: marks the subbing side of the field. Never moves.
+    el('rect', { x: -1.4, y: -5, width: 2.8, height: 10, rx: 0.35, class: 'pc-box' }, n);
+    const t = el('text', { class: 'pc-box-label', 'text-anchor': 'middle', dy: '0.36em', 'font-size': 1.7, transform: 'rotate(-90)' }, n);
+    t.textContent = 'BOX';
   } else if (p.type === 'cone') {
     el('path', { d: 'M0,-1.3L1.15,1L-1.15,1Z', class: 'pc-cone' }, n);
   } else {

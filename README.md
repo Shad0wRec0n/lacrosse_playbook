@@ -15,6 +15,7 @@ Sign in as **Coach** with the coach password. Coaches see the **Designer**, **+ 
 
 **1. Designer (drag and drop).** Open **Designer**.
 - **Setup:** pick a formation, drag players to their spots, add opponents (red), cones or a coach, then use **Place ball**.
+- **Substitution box:** in Setup, tap **+ Box** and place the red BOX on the sideline to show the subbing side. It stays put for the whole play: it never moves, passes or looks, and you can only reposition it in Setup.
 - **Steps:** press **+ Step**, then drag each player to where he goes. Drag the round handle to fine-tune the spot. Choose **Run / cut**, **Dodge** or **Pick** before you drag. Use **Pass**, **Ground ball**, **Scoop** and **Shot** for the ball. Type the coaching point for each step.
 - **Curved and bent routes:** drag a diamond on a route to add a bend there. Each new leg gets its own diamond, so you can add as many bends as you need. Drag a bend point to move it, or tap it to remove it. In **Who moves when**, switch a route between **Curved** and **Sharp corners**, or **Straighten** it.
 - **Looks:** tap **Look** to show the ball carrier's passing options at the end of a step. It starts with whoever has the ball when the step ends (change it with **Looking player**). Tap teammates to draw bright blue dotted arrows to them, or tap the goal for a shot look; tap again to remove one. Looks appear when the step finishes and clear when the next step starts. They never change where the ball goes, and they can be used in the same step as a real shot.

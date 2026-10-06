@@ -96,6 +96,7 @@ export function renderDesigner(main, ctx, id) {
     }
     if (D.k < 0 && D.sel && board.nodes[D.sel]) board.nodes[D.sel].classList.add('is-selected');
     svg.classList.toggle('tool-active', D.tool !== 'move');
+    svg.classList.toggle('setup', D.k < 0);
     setHint();
   }
 
@@ -120,9 +121,10 @@ export function renderDesigner(main, ctx, id) {
     const a = D.add;
     let label = a.label;
     if (a.type === 'X' && !label) { let i = 1; while (piece('X' + i)) i++; label = 'X' + i; }
-    let pid = a.type === 'cone' ? 'cone' : a.type === 'coach' ? 'C' : label;
+    if (a.type === 'box' && piece('BOX')) { setTool('move'); return toast('This play already has a box.'); }
+    let pid = a.type === 'cone' ? 'cone' : a.type === 'coach' ? 'C' : a.type === 'box' ? 'BOX' : label;
     if (piece(pid) || a.type === 'cone') { let i = 1; while (piece(pid + i)) i++; pid = pid + i; }
-    play.pieces.push({ id: pid, type: a.type, label: a.type === 'cone' ? '' : a.type === 'coach' ? 'C' : label, x: r1(at.x), y: r1(at.y) });
+    play.pieces.push({ id: pid, type: a.type, label: a.type === 'cone' ? '' : a.type === 'coach' ? 'C' : a.type === 'box' ? 'BOX' : label, x: r1(at.x), y: r1(at.y) });
     D.sel = pid;
     setTool('move');
     changed();
@@ -262,7 +264,12 @@ export function renderDesigner(main, ctx, id) {
     const at = toField(ev);
     const handle = ev.target.closest('[data-handle]');
     const pc = ev.target.closest('.piece');
-    const pid = pc?.getAttribute('data-id');
+    let pid = pc?.getAttribute('data-id');
+    // The box is placed in Setup only: it never moves, passes or looks.
+    if (pid && piece(pid)?.type === 'box' && !(D.k < 0 && (D.tool === 'move' || D.tool === 'add'))) {
+      if (D.k >= 0 && D.tool === 'move') return toast('The box stays put. Move it in Setup.');
+      pid = undefined;
+    }
 
     if (handle && D.tool === 'move') {
       const [kind, hid, i] = handle.getAttribute('data-handle').split(':');
@@ -375,7 +382,8 @@ export function renderDesigner(main, ctx, id) {
       h('div', { class: 'pal' },
         h('button', { class: 'pal-btn pal-x' + (D.tool === 'add' && D.add?.type === 'X' ? ' on' : ''), onclick: () => setTool('add', { type: 'X', label: '' }) }, '+ Opponent'),
         h('button', { class: 'pal-btn' + (D.tool === 'add' && D.add?.type === 'cone' ? ' on' : ''), onclick: () => setTool('add', { type: 'cone', label: 'cone' }) }, '+ Cone'),
-        h('button', { class: 'pal-btn' + (D.tool === 'add' && D.add?.type === 'coach' ? ' on' : ''), onclick: () => setTool('add', { type: 'coach', label: 'the coach' }) }, '+ Coach')),
+        h('button', { class: 'pal-btn' + (D.tool === 'add' && D.add?.type === 'coach' ? ' on' : ''), onclick: () => setTool('add', { type: 'coach', label: 'the coach' }) }, '+ Coach'),
+        h('button', { class: 'pal-btn pal-box' + (D.tool === 'add' && D.add?.type === 'box' ? ' on' : ''), disabled: !!piece('BOX'), onclick: () => setTool('add', { type: 'box', label: 'the box' }) }, '+ Box')),
       h('p', { class: 'label' }, 'Ball'),
       h('div', { class: 'row' },
         h('button', { class: 'btn btn-quiet' + (D.tool === 'ball' ? ' on' : ''), onclick: () => setTool(D.tool === 'ball' ? 'move' : 'ball') }, 'Place ball'),

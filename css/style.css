@@ -19,6 +19,7 @@
   --chalk: #ffffff;
   --cone: #ff9f1c;
   --look: #1fb6ff;
+  --box: #c62828;
   --danger: #ff6b6b;
   --display: 'Saira Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif;
   --body: 'Barlow', 'Segoe UI', system-ui, sans-serif;
@@ -162,6 +163,9 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
 .piece-O .pc-body { fill: var(--home); stroke: var(--hawk); stroke-width: 0.42; }
 .piece-X .pc-body { fill: var(--opp); stroke: var(--chalk); stroke-width: 0.25; }
 .pc-label, .pc-coach-label { font-family: var(--display); font-weight: 800; fill: var(--chalk); pointer-events: none; }
+.pc-box { fill: var(--box); stroke: var(--chalk); stroke-width: 0.25; }
+.pc-box-label { fill: var(--chalk); font-family: var(--display); font-weight: 800; letter-spacing: 0.15px; pointer-events: none; }
+.pal-box { background: color-mix(in srgb, var(--box) 45%, var(--panel-2)); border-color: var(--box); }
 .pc-cone { fill: var(--cone); stroke: var(--home); stroke-width: 0.2; }
 .pc-coach { fill: var(--chalk); stroke: var(--home); stroke-width: 0.2; }
 .pc-coach-label { fill: var(--home); }
@@ -213,6 +217,8 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
 .d-board { display: grid; gap: 0.5rem; min-width: 0; }
 .design-svg { width: 100%; height: auto; max-height: max(420px, calc(100vh - 200px)); display: block; border-radius: var(--r); border: 1px solid var(--line); touch-action: none; user-select: none; -webkit-user-select: none; }
 .design-svg .piece { cursor: grab; }
+.design-svg .piece-box { cursor: default; }
+.design-svg.setup .piece-box { cursor: grab; }
 .design-svg.tool-active { cursor: crosshair; }
 .design-svg.tool-active .layer-overlay { pointer-events: none; } /* taps reach players, not route handles */
 .design-svg.tool-active .piece { cursor: pointer; }

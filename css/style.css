@@ -136,7 +136,7 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
 .notes li.on .note { background: var(--panel-2); border-color: var(--hawk); color: var(--fg); }
 .note-num { font-family: var(--display); font-weight: 800; font-size: 1.1rem; width: 1.8rem; height: 1.8rem; border-radius: 50%; display: grid; place-items: center; background: var(--panel-2); border: 1px solid var(--line); color: var(--fg); }
 .notes li.on .note-num { background: var(--hawk); color: var(--hawk-ink); border-color: var(--hawk); }
-.note-text { min-width: 0; }
+.note-text { min-width: 0; white-space: pre-line; }
 .legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1rem; font-size: 0.85rem; color: var(--muted); padding-top: 0.75rem; border-top: 1px solid var(--line); }
 .lg { display: inline-flex; align-items: center; gap: 0.4rem; }
 .lg::before { content: ''; width: 26px; height: 0; border-top: 2px solid var(--fg); }
@@ -270,7 +270,7 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
   .pr-grid.pr-full { grid-template-columns: 1fr 1fr 1fr; }
   .pr-step { margin: 0; break-inside: avoid; border: 1px solid #999; padding: 6px; }
   .pr-step svg { width: 100%; height: auto; display: block; }
-  .pr-step figcaption { font-size: 10pt; margin-top: 4px; }
+  .pr-step figcaption { font-size: 10pt; margin-top: 4px; white-space: pre-line; }
   .pr-blank { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; }
   .pr-blank.pr-full { grid-template-columns: 1fr 1fr; }
   .pr-blank svg { width: 100%; height: auto; }

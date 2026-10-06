@@ -29,7 +29,7 @@ function newPlay() {
 }
 
 function blankStep() {
-  return { note: '', dur: DEFAULT_DUR, order: 'pass-first', moves: [], ball: [] };
+  return { note: '', dur: DEFAULT_DUR, order: 'pass-first', moves: [], ball: [], looks: [] };
 }
 
 export function renderDesigner(main, ctx, id) {
@@ -75,7 +75,7 @@ export function renderDesigner(main, ctx, id) {
 
   // ----- drawing -----
   function redraw() {
-    board = createBoard(svg, play, {});
+    board = createBoard(svg, play, { looksAlways: true });
     board.show(D.k, 0);
     const ov = board.layers.overlay;
     if (D.k >= 0) {
@@ -107,6 +107,7 @@ export function renderDesigner(main, ctx, id) {
       pass: 'Tap the player who receives the pass.',
       gb: 'Tap the spot where the ball ends up on the ground.',
       scoop: 'Tap the player who scoops the ground ball.',
+      look: `Looks from ${piece(D.lookFrom)?.label || 'the ball carrier'}: tap a teammate to add a look, or tap the goal for a shot look. Tap again to remove it.`,
     }[D.tool];
     hint.textContent = t;
   }
@@ -132,6 +133,7 @@ export function renderDesigner(main, ctx, id) {
     for (const s of play.steps) {
       s.moves = s.moves.filter((m) => m.id !== pid);
       s.ball = s.ball.filter((e) => e.from !== pid && e.to !== pid && e.by !== pid);
+      s.looks = s.looks.filter((l) => l.from !== pid && l.to !== pid);
     }
     D.sel = null;
     changed();
@@ -224,6 +226,35 @@ export function renderDesigner(main, ctx, id) {
     changed();
   }
 
+  // Looks: passing options shown at the end of the step. They never move the ball.
+  function startLook() {
+    if (D.tool === 'look') return setTool('move');
+    const s = step();
+    D.lookFrom = s.looks.at(-1)?.from || ballAfter(s, board.states[D.k]).holder || null;
+    if (!D.lookFrom) {
+      // After a shot nobody holds the ball, so default to the shooter.
+      D.lookFrom = [...s.ball].reverse().find((e) => e.type === 'shot')?.from || null;
+    }
+    setTool('look');
+  }
+
+  function toggleLook(pid, at) {
+    const s = step();
+    const end = board.states[D.k + 1];
+    let to = pid;
+    if (!to) {
+      const goals = play.field === 'full' ? [15, 95] : [15];
+      if (goals.some((gy) => Math.hypot(at.x - 30, at.y - gy) < 4.5)) to = 'goal';
+    }
+    if (!to) return;
+    if (!D.lookFrom) return toast('Pick the player who is looking first.');
+    if (to === D.lookFrom) return;
+    if (to !== 'goal' && !end.pos[to]) return;
+    const i = s.looks.findIndex((l) => l.from === D.lookFrom && l.to === to);
+    if (i >= 0) s.looks.splice(i, 1); else s.looks.push({ from: D.lookFrom, to });
+    changed();
+  }
+
   // ----- pointer handling -----
   svg.addEventListener('pointerdown', (ev) => {
     if (ev.button !== 0) return;
@@ -246,6 +277,8 @@ export function renderDesigner(main, ctx, id) {
       return;
     } else if (D.tool === 'gb') {
       return addRoll(at);
+    } else if (D.tool === 'look') {
+      return toggleLook(pid, at);
     } else if (D.tool === 'scoop') {
       if (pid) addScoop(pid);
       return;
@@ -443,12 +476,22 @@ export function renderDesigner(main, ctx, id) {
         h('button', { class: 'pal-btn' + (D.tool === 'pass' ? ' on' : ''), onclick: () => setTool(D.tool === 'pass' ? 'move' : 'pass') }, 'Pass'),
         h('button', { class: 'pal-btn' + (D.tool === 'gb' ? ' on' : ''), onclick: () => setTool(D.tool === 'gb' ? 'move' : 'gb') }, 'Ground ball'),
         h('button', { class: 'pal-btn' + (D.tool === 'scoop' ? ' on' : ''), onclick: () => setTool(D.tool === 'scoop' ? 'move' : 'scoop') }, 'Scoop'),
-        h('button', { class: 'pal-btn', onclick: addShot }, 'Shot')),
+        h('button', { class: 'pal-btn', onclick: addShot }, 'Shot'),
+        h('button', { class: 'pal-btn pal-look' + (D.tool === 'look' ? ' on' : ''), onclick: startLook }, 'Look')),
+      D.tool === 'look' ? h('label', { class: 'row look-from' }, 'Looking player',
+        h('select', { 'aria-label': 'Looking player', onchange(e) { D.lookFrom = e.target.value; setHint(); } },
+          play.pieces.filter((p) => p.type === 'O' || p.type === 'X').map((p) => h('option', { value: p.id, selected: p.id === D.lookFrom }, p.label)))) : null,
       h('label', { class: 'label', for: 'note' }, 'Coaching note'),
       note,
       h('p', { class: 'label' }, 'Who moves when'),
       h('p', { class: 'muted small' }, 'Actions in the same phase happen together. Drag an action to another phase, or use ▲ ▼. Each later phase can start when the one before ends, halfway through it, or just after it begins.'),
       phaseList(s),
+      s.looks.length ? [
+        h('p', { class: 'label' }, 'Looks at the end of this step'),
+        h('ul', { class: 'actions' }, s.looks.map((l) => h('li', {},
+          h('span', {}, `${piece(l.from)?.label || l.from} looks ${l.to === 'goal' ? 'to shoot' : 'to ' + (piece(l.to)?.label || l.to)}`),
+          h('button', { class: 'x', 'aria-label': 'Remove look', onclick() { s.looks = s.looks.filter((x) => x !== l); changed(); } }, '✕')))),
+      ] : null,
       durLabel,
       h('input', { id: 'dur', type: 'range', min: 0.8, max: 4, step: 0.1, value: s.dur, oninput(e) { s.dur = +e.target.value; durLabel.textContent = `Speed: ${s.dur.toFixed(1)} seconds per phase`; save(); } }),
       h('div', { class: 'row' },

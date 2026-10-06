@@ -18,6 +18,7 @@
   --turf-2: #4a933f;
   --chalk: #ffffff;
   --cone: #ff9f1c;
+  --look: #1fb6ff;
   --danger: #ff6b6b;
   --display: 'Saira Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif;
   --body: 'Barlow', 'Segoe UI', system-ui, sans-serif;
@@ -142,6 +143,7 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
 .lg::before { content: ''; width: 26px; height: 0; border-top: 2px solid var(--fg); }
 .lg-pass::before { border-top: 2px dashed var(--ball); }
 .lg-dodge::before { height: 6px; border: 0; background: linear-gradient(135deg, transparent 35%, var(--fg) 35% 55%, transparent 55%) 0 0 / 6px 6px; }
+.lg-look::before { border-top: 3px dotted var(--look); }
 .lg-pick::before { width: 22px; border-right: 2px solid var(--fg); height: 10px; border-top: 0; background: linear-gradient(var(--fg), var(--fg)) 0 50% / 100% 2px no-repeat; }
 .aside-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
@@ -175,6 +177,12 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
 .phase-badge circle { fill: var(--home); stroke: var(--ball); stroke-width: 0.18; }
 .phase-badge text { fill: var(--ball); font-family: var(--display); font-weight: 800; }
 .has-focus .phase-badge:not(.is-focus) { opacity: 0.25; }
+.arw-look { stroke: var(--look); stroke-width: 0.42; stroke-dasharray: 0.05 0.75; stroke-linecap: round; }
+.arw-look-shot { stroke-width: 0.5; }
+.mk-look { fill: var(--look); }
+.layer-looks { opacity: 0; transition: opacity .35s; }
+.layer-looks.on { opacity: 1; }
+.has-focus .arw-look:not(.is-focus) { opacity: 0.25; }
 .mk-home { fill: var(--chalk); }
 .mk-opp { fill: var(--opp-line); }
 .mk-ball { fill: var(--ball); }
@@ -206,6 +214,7 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
 .design-svg { width: 100%; height: auto; max-height: max(420px, calc(100vh - 200px)); display: block; border-radius: var(--r); border: 1px solid var(--line); touch-action: none; user-select: none; -webkit-user-select: none; }
 .design-svg .piece { cursor: grab; }
 .design-svg.tool-active { cursor: crosshair; }
+.design-svg.tool-active .layer-overlay { pointer-events: none; } /* taps reach players, not route handles */
 .design-svg.tool-active .piece { cursor: pointer; }
 .design-svg .piece.is-selected .pc-body, .design-svg .piece.is-selected .pc-cone, .design-svg .piece.is-selected .pc-coach { stroke: var(--ball); stroke-width: 0.6; }
 .h-end { fill: rgba(255, 255, 255, 0.25); stroke: var(--chalk); stroke-width: 0.2; stroke-dasharray: 0.4 0.3; cursor: move; }
@@ -222,6 +231,8 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
 .pal-btn { padding: 0.35em 0.7em; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; font-weight: 600; font-size: 0.9rem; }
 .pal-btn:disabled { opacity: 0.35; cursor: default; }
 .pal-btn.on { background: var(--ball); color: var(--home); border-color: var(--ball); }
+.pal-btn.pal-look.on { background: var(--look); border-color: var(--look); color: var(--home); }
+.look-from { font-size: 0.9rem; color: var(--muted); }
 .pal-o { background: var(--home); border-color: var(--hawk); }
 .pal-x { background: color-mix(in srgb, var(--opp) 30%, var(--panel-2)); border-color: var(--opp); }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; width: max-content; max-width: 100%; }
@@ -307,4 +318,6 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
   #print .arw-ball { stroke: #1d8a00; }
   .mk-ball { fill: #1d8a00; }
   #print .ghost-home { stroke: #000; }
+  .mk-look { fill: #0077c8; }
+  #print .arw-look { stroke: #0077c8; }
 }

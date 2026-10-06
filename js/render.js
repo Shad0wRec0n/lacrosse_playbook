@@ -1,5 +1,5 @@
 // Draws a play onto an <svg>: field, arrows, players, ball.
-import { el, drawField, viewBoxFor } from './field.js';
+import { el, drawField, viewBoxFor, nearestGoalY } from './field.js';
 import { allStates, frame, staticFrame, ballSegments, routeSamples, phaseCount, hasPhases } from './engine.js';
 
 export const R = 1.7; // player radius in yards
@@ -19,6 +19,7 @@ function ensureDefs() {
   marker('ah-home', 'mk-home');
   marker('ah-opp', 'mk-opp');
   marker('ah-ball', 'mk-ball');
+  marker('ah-look', 'mk-look');
   const f = el('filter', { id: 'ball-glow', x: '-100%', y: '-100%', width: '300%', height: '300%' }, defs);
   el('feGaussianBlur', { stdDeviation: 0.5 }, f);
   document.body.prepend(svg);
@@ -129,6 +130,21 @@ function badge(g, pts, seq, ids) {
   el('text', { 'text-anchor': 'middle', dy: '0.36em', 'font-size': 1.1 }, b).textContent = String((seq ?? 0) + 1);
 }
 
+// ---- looks ----
+// Passing options at the end of a step: bright blue dotted arrows from the looking player
+// (where he finishes the step) to a teammate's finishing spot or to the goal. Display only.
+export function drawLooks(g, play, step, end) {
+  const PR = R * pieceScale(play.field);
+  for (const lk of step.looks || []) {
+    const a = end.pos[lk.from];
+    const b = lk.to === 'goal' ? { x: 30, y: nearestGoalY(play.field, a?.y ?? 15) } : end.pos[lk.to];
+    if (!a || !b) continue;
+    const pts = trim([a, b], PR + 0.3, lk.to === 'goal' ? 1.2 : PR + 0.5);
+    if (!pts) continue;
+    el('path', { d: toD(pts), class: 'arw arw-look' + (lk.to === 'goal' ? ' arw-look-shot' : ''), 'marker-end': 'url(#ah-look)', 'data-ids': [lk.from, lk.to].join(' ') }, g);
+  }
+}
+
 // ---- board ----
 export function createBoard(svg, play, opts = {}) {
   ensureDefs();
@@ -136,7 +152,7 @@ export function createBoard(svg, play, opts = {}) {
   svg.setAttribute('viewBox', viewBoxFor(play.field).join(' '));
   svg.classList.add('board');
   const L = {};
-  for (const k of ['field', 'trails', 'arrows', 'pieces', 'ball', 'overlay']) L[k] = el('g', { class: 'layer-' + k }, svg);
+  for (const k of ['field', 'trails', 'arrows', 'looks', 'pieces', 'ball', 'overlay']) L[k] = el('g', { class: 'layer-' + k }, svg);
   drawField(L.field, play.field, opts);
 
   const nodes = {};
@@ -176,7 +192,9 @@ export function createBoard(svg, play, opts = {}) {
   function drawArrowsFor(k) {
     L.trails.innerHTML = '';
     L.arrows.innerHTML = '';
+    L.looks.innerHTML = '';
     if (k == null || k < 0) return;
+    if (play.steps[k]) drawLooks(L.looks, play, play.steps[k], states[k + 1]);
     if (trails) for (let j = 0; j < k; j++) drawStepArrows(L.trails, play, play.steps[j], states[j], { faded: true });
     if (play.steps[k]) drawStepArrows(L.arrows, play, play.steps[k], states[k], { ghosts: true });
   }
@@ -188,9 +206,11 @@ export function createBoard(svg, play, opts = {}) {
       if (k !== curK) { drawArrowsFor(k); curK = k; applyFocus(); }
       if (k < 0 || !play.steps.length) place(staticFrame(states[0]));
       else place(frame(play.steps[k], states[k], u));
+      // Looks appear once the step's movement is done (always, in the designer and print sheets).
+      L.looks.classList.toggle('on', !!opts.looksAlways || (k >= 0 && u >= 0.97));
     },
     showFinal() {
-      if (curK !== 'final') { L.trails.innerHTML = ''; L.arrows.innerHTML = ''; curK = 'final'; }
+      if (curK !== 'final') { L.trails.innerHTML = ''; L.arrows.innerHTML = ''; L.looks.innerHTML = ''; curK = 'final'; }
       place(staticFrame(states[states.length - 1]));
     },
     setFocus(id) { focus = id || null; applyFocus(); },

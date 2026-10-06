@@ -24,7 +24,7 @@ export function printPlay(play) {
     const card = h('figure', { class: 'pr-step' }, svg,
       h('figcaption', {}, h('b', {}, `Step ${k + 1}`), ' ', step.note || ''));
     grid.append(card);
-    createBoard(svg, play, { watermark: false }).show(k, 0);
+    createBoard(svg, play, { watermark: false, looksAlways: true }).show(k, 0);
   });
   root.append(grid);
   window.print();

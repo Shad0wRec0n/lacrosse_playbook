@@ -4,7 +4,7 @@
 //   id, title, category, field: 'half'|'full', description,
 //   pieces: [{ id, type: 'O'|'X'|'cone'|'coach', label, x, y }],
 //   ball:   { holder: id } | { at: [x, y] },
-//   steps:  [{ note, dur,
+//   steps:  [{ note, dur, looks?: [{ from, to: pieceId | 'goal' }],
 //              moves: [{ id, to:[x,y], path?:[[x,y]...], sharp?, kind:'run'|'dodge'|'pick', seq? }],
 //              ball: [{ type:'pass', from, to, seq? } | { type:'shot', from, at, seq? } |
 //                     { type:'roll', from?, at, seq? } | { type:'pickup', by, seq? }] }]
@@ -107,6 +107,7 @@ export function normalizePlay(play) {
       return m;
     }),
     ball: s.ball || [],
+    looks: s.looks || [],
   }));
   play.ball = play.ball || {};
   return play;

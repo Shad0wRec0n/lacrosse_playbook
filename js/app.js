@@ -2,6 +2,8 @@
 import { deriveKey, decryptJSON, CHECK_TEXT } from './crypto.js';
 import { createBoard } from './render.js';
 import { normalizePlay, stepSeconds } from './engine.js';
+
+const hasLooks = (step) => !!step?.looks?.length;
 import { $, h, svgEl, toast, store, CATEGORIES, PREVIEW, ICON } from './ui.js';
 import { renderDesigner } from './designer.js';
 import { printPlay } from './print.js';
@@ -271,7 +273,8 @@ function renderViewer(play, isDraft) {
       }
     } else {
       u += dt / stepSeconds(play.steps[k]);
-      if (u >= 1) { u = 1; hold = k < n - 1 ? 0.7 : 1.4; }
+      // Pause longer on steps with looks so players can read the options.
+      if (u >= 1) { u = 1; hold = (k < n - 1 ? 0.7 : 1.4) + (hasLooks(play.steps[k]) ? 1.3 : 0); }
     }
     draw();
     raf = requestAnimationFrame(tick);
@@ -338,7 +341,7 @@ function renderViewer(play, isDraft) {
         notes,
         h('div', { class: 'legend' },
           h('span', { class: 'lg lg-run' }, 'Run / cut'), h('span', { class: 'lg lg-pass' }, 'Pass'),
-          h('span', { class: 'lg lg-dodge' }, 'Dodge'), h('span', { class: 'lg lg-pick' }, 'Pick')),
+          h('span', { class: 'lg lg-dodge' }, 'Dodge'), h('span', { class: 'lg lg-pick' }, 'Pick'), h('span', { class: 'lg lg-look' }, 'Look')),
         h('div', { class: 'aside-actions' },
           isCoach() ? h('button', { class: 'btn btn-quiet', onclick: edit }, isDraft ? 'Keep editing' : 'Edit in Designer') : null,
           PREVIEW ? null : h('button', { class: 'btn btn-quiet', onclick: () => printPlay(play) }, 'Print sheet')))));

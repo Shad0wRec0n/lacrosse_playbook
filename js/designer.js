@@ -3,7 +3,8 @@ import { createBoard } from './render.js';
 import { el, fieldBounds, nearestGoalY } from './field.js';
 import { normalizePlay, ballAfter, STICK, DEFAULT_DUR, ensurePhases, compactPhases, phaseCount, routeControls, legMid, LEADS } from './engine.js';
 import { encryptJSON, decryptJSON } from './crypto.js';
-import { h, svgEl, toast, CATEGORIES, PREVIEW, download, copyText, uid } from './ui.js';
+import { h, svgEl, toast, store, CATEGORIES, PREVIEW, download, copyText, uid } from './ui.js';
+import { publishFile, checkToken, TOKEN_URL, repoLabel } from './github.js';
 import { printBlank } from './print.js';
 
 const OUR_POSITIONS = ['A1', 'A2', 'A3', 'M1', 'M2', 'M3', 'D1', 'D2', 'D3', 'G', 'LSM', 'FO'];
@@ -56,7 +57,7 @@ export function renderDesigner(main, ctx, id) {
     play.updated = Date.now();
     ctx.drafts[play.id] = play;
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => { ctx.saveDrafts(); savedNote.textContent = 'Saved on this device'; }, 250);
+    saveTimer = setTimeout(() => { ctx.saveDrafts(); savedNote.textContent = 'Saved on this device · not in the team playbook yet'; }, 250);
     savedNote.textContent = 'Saving…';
   }
   function changed() { if (D.k >= 0 && step()) compactPhases(step()); save(); redraw(); renderPanel(); }
@@ -527,6 +528,98 @@ export function renderDesigner(main, ctx, id) {
   }
   const fileIn = h('input', { type: 'file', accept: '.json,application/json', hidden: true, onchange(e) { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; } });
 
+  // ----- save to the team playbook (GitHub) -----
+  const TOKEN_KEY = 'hawks.ghToken';
+  async function loadToken() {
+    const box = store.get(TOKEN_KEY, null);
+    if (!box) return null;
+    try { return await decryptJSON(ctx.key, box); } catch { return null; }
+  }
+  async function keepToken(token) { store.set(TOKEN_KEY, await encryptJSON(ctx.key, token)); }
+
+  const saveBtn = h('button', { class: 'btn btn-primary', onclick: () => publish() }, 'Save to playbook');
+
+  async function publish(token) {
+    if (PREVIEW) return toast('Saving to the playbook works on the team site. Use Share & files → Copy play data here.');
+    token = token || await loadToken();
+    if (!token) return openKeyDialog();
+    clearTimeout(saveTimer);
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    try {
+      const copy = structuredClone(play);
+      delete copy.updated;
+      const box = await encryptJSON(ctx.key, copy);
+      const result = await publishFile(token, `${play.id}.enc.json`, JSON.stringify(box) + '\n');
+      const i = ctx.published.findIndex((p) => p.id === play.id);
+      if (i >= 0) ctx.published[i] = structuredClone(copy); else ctx.published.push(structuredClone(copy));
+      delete ctx.drafts[play.id];
+      ctx.saveDrafts();
+      savedNote.textContent = 'Saved to the team playbook';
+      toast(result === 'created'
+        ? 'Added to the team playbook. Players will see it in a minute or two.'
+        : 'Team playbook updated. Players will see the change in a minute or two.');
+    } catch (e) {
+      console.error(e);
+      if (e.status === 401) {
+        store.del(TOKEN_KEY);
+        toast('GitHub did not accept the saved key (it may have expired). Add a new one and try again.');
+        openKeyDialog();
+      } else if (e.status === 403 || e.status === 404) {
+        toast(`The GitHub key can't write to ${repoLabel}. Check it has Contents: Read and write for that repository.`);
+        openKeyDialog();
+      } else {
+        toast('Could not reach GitHub. Your play is still saved on this device; try again in a moment.');
+      }
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save to playbook';
+    }
+  }
+
+  function openKeyDialog() {
+    const input = h('input', { id: 'gh-token', type: 'password', autocomplete: 'off', placeholder: 'github_pat_…', required: true });
+    const err = h('p', { class: 'lock-err', role: 'alert' });
+    const go = h('button', { class: 'btn btn-primary', type: 'submit' }, 'Save key and publish');
+    const close = () => overlay.remove();
+    const overlay = h('div', { class: 'modal-wrap', onclick(e) { if (e.target === overlay) close(); } },
+      h('form', {
+        class: 'modal',
+        async onsubmit(e) {
+          e.preventDefault();
+          const token = input.value.trim();
+          go.disabled = true; go.textContent = 'Checking…'; err.textContent = '';
+          try {
+            await checkToken(token);
+            await keepToken(token);
+            close();
+            publish(token);
+          } catch (ex) {
+            err.textContent = ex.status === 401
+              ? 'GitHub did not accept that key. Copy it again and paste the whole thing.'
+              : ex.status === 404 ? `That key can't see ${repoLabel}. Make sure you picked that repository.`
+              : 'Could not reach GitHub. Check your connection and try again.';
+            go.disabled = false; go.textContent = 'Save key and publish';
+          }
+        },
+      },
+        h('h2', {}, 'Connect this device to GitHub'),
+        h('p', { class: 'muted' }, `Saving commits the play to ${repoLabel}. Do this once on each device you coach from.`),
+        h('ol', { class: 'steps' },
+          h('li', {}, 'Open ', h('a', { href: TOKEN_URL, target: '_blank', rel: 'noopener' }, 'GitHub → new fine-grained token'), ' while signed in as the repo owner.'),
+          h('li', {}, 'Name it "Hawks playbook", pick an expiration (end of season works).'),
+          h('li', {}, 'Repository access: ', h('b', {}, 'Only select repositories'), ` → ${repoLabel}.`),
+          h('li', {}, 'Permissions → Repository permissions → ', h('b', {}, 'Contents: Read and write'), '.'),
+          h('li', {}, 'Generate the token, copy it, and paste it below.')),
+        h('label', { for: 'gh-token', class: 'label' }, 'GitHub key'),
+        input,
+        h('p', { class: 'muted small' }, 'The key stays on this device, locked with the team password. It is never put in the repo.'),
+        err,
+        h('div', { class: 'row' }, go, h('button', { class: 'btn btn-quiet', type: 'button', onclick: close }, 'Cancel'))));
+    document.body.append(overlay);
+    input.focus();
+  }
+
   let armDelete = false;
   const delBtn = h('button', {
     class: 'btn btn-danger',
@@ -549,7 +642,8 @@ export function renderDesigner(main, ctx, id) {
     h('section', { class: 'd-head' },
       h('div', { class: 'd-meta' }, title, desc, h('div', { class: 'row' }, cat, fieldSel, savedNote)),
       h('div', { class: 'd-actions' },
-        h('button', { class: 'btn btn-primary', onclick() { save(); ctx.saveDrafts(); ctx.go('#draft-' + play.id); } }, '▶ Preview'),
+        saveBtn,
+        h('button', { class: 'btn btn-quiet', onclick() { save(); ctx.saveDrafts(); ctx.go('#draft-' + play.id); } }, '▶ Preview'),
         h('details', { class: 'menu' },
           h('summary', { class: 'btn btn-quiet' }, 'Share & files'),
           h('div', { class: 'menu-body' },
@@ -559,6 +653,7 @@ export function renderDesigner(main, ctx, id) {
               h('button', { onclick: () => download(`${play.id}.json`, plain()) }, 'Download editable file (.json)'),
               h('button', { onclick: () => fileIn.click() }, 'Import a play file'),
               h('button', { onclick: () => printBlank(play.field) }, `Print blank ${play.field} field for sketching`),
+              h('button', { onclick() { store.del(TOKEN_KEY); toast('GitHub key removed from this device.'); } }, 'Forget GitHub key on this device'),
             ],
             fallback)),
         delBtn, fileIn)),

@@ -265,6 +265,14 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
 .timing summary { cursor: pointer; color: var(--muted); font-weight: 600; padding-block: 0.3rem; }
 .timing[open] { display: grid; gap: 0.4rem; }
 
+/* ---------- modal ---------- */
+.modal-wrap { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.6); display: grid; place-items: center; padding: 16px; }
+.modal { width: min(520px, 100%); max-height: 90vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 1.25rem; display: grid; gap: 0.7rem; }
+.modal h2 { font-size: 1.5rem; }
+.modal .steps { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.35rem; }
+.modal a { color: var(--hawk); }
+.modal input { width: 100%; }
+
 /* ---------- toast ---------- */
 #toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 20px); transform: translate(-50%, 150%); background: var(--fg); color: var(--bg); padding: 0.7rem 1.1rem; border-radius: 8px; font-weight: 600; max-width: calc(100% - 32px); transition: transform .25s; z-index: 50; }
 #toast.show { transform: translate(-50%, 0); }

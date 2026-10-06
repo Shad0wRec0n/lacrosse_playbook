@@ -34,6 +34,12 @@ Take a photo and send it to Claude, which turns it into an animated play.
 
 Drafts are only on the device that made them. To publish one:
 
+- **Save to playbook (recommended):** press **Save to playbook** at the top of the Designer. It encrypts the play and commits it to this repo; players see it a minute or two later, once GitHub Pages refreshes. The first time on each device it asks for a GitHub key:
+  1. While signed in to GitHub as the repo owner, open [new fine-grained token](https://github.com/settings/personal-access-tokens/new).
+  2. Repository access: **Only select repositories** → `lacrosse_playbook`. Permissions → Repository permissions → **Contents: Read and write**. Set an expiration (end of season works).
+  3. Generate it and paste it into the Designer.
+
+  The key is stored only on that device, locked with the team password, and never put in the repo. Remove it with **Share & files → Forget GitHub key on this device**. Commit messages use the play's id, not its name, so play names stay private.
 - **Option A:** in the Designer, use **Share & files → Copy play data** and paste it to Claude. Claude publishes it.
 - **Option B:** use **Share & files → Download team file (.enc.json)**, then on GitHub open the `plays` folder, choose **Add file → Upload files**, and commit. The site picks it up within a minute or two. Uploading a file with the same name replaces the old version.
 

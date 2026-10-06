@@ -11,8 +11,9 @@
 // }
 //
 // Timing inside a step. When any action has a `seq` (its phase number, 0-based), the step runs
-// phase by phase: everything in a phase happens together, and the next phase starts when it ends.
-// Steps without phases (older plays) use the step's `order` preset instead.
+// phase by phase: everything in a phase happens together. step.lead[w] says how much of phase w-1
+// must finish before phase w starts: 1 = after it ends (default), 0.5 = halfway, 0.2 = just after
+// it begins. Steps without phases (older plays) use the step's `order` preset instead.
 
 // Where the ball sits relative to the player (stick side).
 export const STICK = { x: 1.0, y: -1.0 };
@@ -24,6 +25,11 @@ export const ORDERS = {
 };
 
 export const DEFAULT_DUR = 2.2;
+export const LEADS = [
+  [1, 'after Phase {n} ends'],
+  [0.5, 'when Phase {n} is halfway'],
+  [0.2, 'just after Phase {n} begins'],
+];
 const BALL_SHARE = 0.45; // a pass or shot takes this share of a phase's time
 export const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 export const ease = (p) => (p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2);
@@ -128,6 +134,10 @@ export function compactPhases(step) {
   const used = [...new Set([...step.moves, ...step.ball].map((x) => x.seq ?? 0))].sort((a, b) => a - b);
   const map = new Map(used.map((s, i) => [s, i]));
   for (const x of [...step.moves, ...step.ball]) x.seq = map.get(x.seq ?? 0);
+  if (step.lead) {
+    const lead = used.map((s, i) => (i === 0 ? null : step.lead[s] ?? null));
+    if (lead.some((v) => v != null && v !== 1)) step.lead = lead; else delete step.lead;
+  }
   return step;
 }
 
@@ -147,11 +157,23 @@ function phaseWeights(step) {
   });
 }
 
+// Start and length of each phase, in phase units, allowing phases to overlap.
+function phaseLayout(step) {
+  const weights = phaseWeights(step);
+  const starts = [0];
+  for (let w = 1; w < weights.length; w++) {
+    const lead = step.lead?.[w] ?? 1;
+    starts.push(starts[w - 1] + weights[w - 1] * lead);
+  }
+  const total = Math.max(...weights.map((wt, i) => starts[i] + wt));
+  return { weights, starts, total };
+}
+
 // How long a step takes to play, in seconds at 1x speed.
 export function stepSeconds(step) {
   const dur = step.dur || DEFAULT_DUR;
   if (!hasPhases(step)) return dur;
-  return dur * phaseWeights(step).reduce((a, b) => a + b, 0);
+  return dur * phaseLayout(step).total;
 }
 
 // When each action runs, as fractions (0..1) of the step.
@@ -173,12 +195,8 @@ export function timing(step) {
     });
     return { win, ev };
   }
-  const weights = phaseWeights(step);
-  const total = weights.reduce((a, b) => a + b, 0);
-  const starts = [];
-  let acc = 0;
-  for (const w of weights) { starts.push(acc / total); acc += w; }
-  const slice = (w) => [starts[w], starts[w] + weights[w] / total];
+  const { weights, starts, total } = phaseLayout(step);
+  const slice = (w) => [starts[w] / total, (starts[w] + weights[w]) / total];
   for (const m of step.moves) win.set(m, slice(m.seq ?? 0));
   const ev = [];
   weights.forEach((weight, w) => {

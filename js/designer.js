@@ -1,7 +1,7 @@
 // Play Designer: place pieces, then build the play step by step by dragging.
 import { createBoard } from './render.js';
 import { el, fieldBounds, nearestGoalY } from './field.js';
-import { normalizePlay, ballAfter, STICK, DEFAULT_DUR, ensurePhases, compactPhases, phaseCount, routeControls, legMid } from './engine.js';
+import { normalizePlay, ballAfter, STICK, DEFAULT_DUR, ensurePhases, compactPhases, phaseCount, routeControls, legMid, LEADS } from './engine.js';
 import { encryptJSON, decryptJSON } from './crypto.js';
 import { h, svgEl, toast, CATEGORIES, PREVIEW, download, copyText, uid } from './ui.js';
 import { printBlank } from './print.js';
@@ -361,7 +361,10 @@ export function renderDesigner(main, ctx, id) {
     const all = [...s.moves, ...s.ball];
     if (dir < 0) {
       if (x.seq > 0) x.seq -= 1;
-      else if (all.some((y) => y !== x && y.seq === 0)) for (const y of all) if (y !== x) y.seq += 1;
+      else if (all.some((y) => y !== x && y.seq === 0)) {
+        for (const y of all) if (y !== x) y.seq += 1;
+        if (s.lead) s.lead = [null, ...s.lead];
+      }
     } else if (all.some((y) => y !== x && y.seq >= x.seq)) {
       x.seq += 1;
     }
@@ -414,7 +417,12 @@ export function renderDesigner(main, ctx, id) {
         ...s.moves.filter((m) => m.seq === w).map((m) => actionRow(s, m, true)),
       ];
       groups.push(dropZone(w, 'phase',
-        h('div', { class: 'phase-head' }, h('b', {}, `Phase ${w + 1}`), h('span', {}, w === 0 ? 'starts the step' : `after phase ${w}`)),
+        h('div', { class: 'phase-head' }, h('b', {}, `Phase ${w + 1}`),
+          w === 0 ? h('span', {}, 'starts the step') : h('label', {}, 'starts ',
+            h('select', {
+              'aria-label': `When phase ${w + 1} starts`,
+              onchange(e) { s.lead = s.lead || []; s.lead[w] = +e.target.value; compactPhases(s); changed(); },
+            }, LEADS.map(([v, l]) => h('option', { value: v, selected: (s.lead?.[w] ?? 1) === v }, l.replace('{n}', w)))))),
         h('ul', { class: 'actions' }, rows)));
     }
     groups.push(dropZone(n, 'phase phase-new', 'Drop here to make it happen after everything else'));
@@ -439,7 +447,7 @@ export function renderDesigner(main, ctx, id) {
       h('label', { class: 'label', for: 'note' }, 'Coaching note'),
       note,
       h('p', { class: 'label' }, 'Who moves when'),
-      h('p', { class: 'muted small' }, 'Actions in the same phase happen together. Drag an action to another phase, or use ▲ ▼.'),
+      h('p', { class: 'muted small' }, 'Actions in the same phase happen together. Drag an action to another phase, or use ▲ ▼. Each later phase can start when the one before ends, halfway through it, or just after it begins.'),
       phaseList(s),
       durLabel,
       h('input', { id: 'dur', type: 'range', min: 0.8, max: 4, step: 0.1, value: s.dur, oninput(e) { s.dur = +e.target.value; durLabel.textContent = `Speed: ${s.dur.toFixed(1)} seconds per phase`; save(); } }),

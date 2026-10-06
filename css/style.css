@@ -238,7 +238,9 @@ input[type=range] { accent-color: var(--hawk); width: 100%; }
 .phase.over { border-color: var(--ball); background: color-mix(in srgb, var(--ball) 8%, transparent); }
 .phase-head { display: flex; gap: 0.5rem; align-items: baseline; font-size: 0.85rem; }
 .phase-head b { font-family: var(--display); font-size: 1rem; color: var(--ball); text-transform: uppercase; letter-spacing: 0.04em; }
-.phase-head span { color: var(--muted); }
+.phase-head span, .phase-head label { color: var(--muted); }
+.phase-head { flex-wrap: wrap; }
+.phase-head select { padding: 0.15em 0.4em; font-size: 0.85rem; }
 .phase-new { border-style: dashed; color: var(--muted); font-size: 0.85rem; text-align: center; padding-block: 0.6rem; }
 .actions li[draggable] { cursor: grab; }
 .actions li.dragging { opacity: 0.4; }

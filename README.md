@@ -17,7 +17,7 @@ Sign in as **Coach** with the coach password. Coaches see the **Designer**, **+ 
 - **Setup:** pick a formation, drag players to their spots, add opponents (red), cones or a coach, then use **Place ball**.
 - **Steps:** press **+ Step**, then drag each player to where he goes. Drag the round handle to fine-tune the spot. Choose **Run / cut**, **Dodge** or **Pick** before you drag. Use **Pass**, **Ground ball**, **Scoop** and **Shot** for the ball. Type the coaching point for each step.
 - **Curved and bent routes:** drag a diamond on a route to add a bend there. Each new leg gets its own diamond, so you can add as many bends as you need. Drag a bend point to move it, or tap it to remove it. In **Who moves when**, switch a route between **Curved** and **Sharp corners**, or **Straighten** it.
-- **Who moves when:** actions in the same phase happen together, and Phase 2 starts when Phase 1 ends. Drag an action to another phase, or use ▲ ▼. On the field, each arrow shows its phase number so players can see the order.
+- **Who moves when:** actions in the same phase happen together, and Phase 2 starts when Phase 1 ends. Drag an action to another phase, or use ▲ ▼. Each later phase can start **after the one before ends**, **when it is halfway**, or **just after it begins**, so off-ball players can start moving while the ball carrier is still going. On the field, each arrow shows its phase number so players can see the order.
 - Drafts save on your device automatically. **Preview** shows exactly what players will see.
 
 **2. Paper.** In the Designer, open **Share & files → Print blank field for sketching**. Draw the play:

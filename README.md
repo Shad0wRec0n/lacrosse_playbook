@@ -1,4 +1,4 @@
-# Annapolis Hawks Playbook
+# Annapolis Hawks Lacrosse Club Playbook
 
 Animated plays and drills for the Hawks. Players open the site, enter the team password, and watch each play run step by step with coaching points beside the field.
 

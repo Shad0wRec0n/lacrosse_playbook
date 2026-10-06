@@ -111,7 +111,7 @@ function renderLock(msg) {
       btn.disabled = false; btn.textContent = 'Unlock playbook';
     },
   },
-    h('img', { src: 'assets/logo-outline.png', alt: 'Annapolis Hawks', class: 'lock-logo' }),
+    h('img', { src: 'assets/logo-outline.png', alt: 'Annapolis Hawks Lacrosse Club', class: 'lock-logo' }),
     h('h1', { class: 'lock-title' }, 'Playbook'),
     h('div', { class: 'role-pick', role: 'group', 'aria-label': 'I am a' }, h('span', {}, 'I am a'), h('div', { class: 'seg' }, roleBtns)),
     h('label', { for: 'pw', class: 'sr-only' }, 'Password'),
@@ -199,7 +199,7 @@ function renderHome() {
   shell('home',
     h('section', { class: 'hero' },
       h('div', {},
-        h('p', { class: 'eyebrow' }, 'Annapolis Hawks · Middle School'),
+        h('p', { class: 'eyebrow' }, 'Annapolis Hawks Lacrosse Club'),
         h('h1', {}, 'Team Playbook'),
         h('p', { class: 'muted' }, `${nPlays} play${nPlays === 1 ? '' : 's'} · ${nDrills} drill${nDrills === 1 ? '' : 's'}. Tap one to watch it run, then step through it at your own pace.`)),
       isCoach() ? h('a', { href: '#design', class: 'btn' }, '+ New play') : null),

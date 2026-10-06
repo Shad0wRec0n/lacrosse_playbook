@@ -11,7 +11,7 @@ function sheet() {
 function header(title, sub) {
   return h('header', { class: 'pr-head' },
     h('img', { src: 'assets/logo-outline.png', alt: '', class: 'pr-logo' }),
-    h('div', {}, h('div', { class: 'pr-eyebrow' }, 'Annapolis Hawks Lacrosse'), h('h1', {}, title), sub ? h('p', {}, sub) : null));
+    h('div', {}, h('div', { class: 'pr-eyebrow' }, 'Annapolis Hawks Lacrosse Club'), h('h1', {}, title), sub ? h('p', {}, sub) : null));
 }
 
 export function printPlay(play) {
